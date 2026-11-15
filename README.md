@@ -1,1 +1,2 @@
 # aigolog
+Logs analyzer dashboard 
