@@ -1,7 +1,7 @@
 # Throwaway probe for the aigolog design (section 7.1, the Windows Event Log reader).
 #
-# It runs on a GitHub-hosted Windows runner, which is a disposable machine. It creates one local
-# test account, three test services and a few test events, then reads them back the way aigolog
+# It runs on a GitHub-hosted Windows runner, which is a disposable machine. It creates two local
+# test accounts, three test services and a few test events, then reads them back the way aigolog
 # will: through the Windows Event Log API (EvtQuery, EvtNext, EvtRender; here by way of .NET),
 # and, for comparison, through wevtutil.
 #
@@ -29,6 +29,10 @@ $script:ProbeUserReady = $false
 $script:NewestSystemRecord = $null
 $script:ProbeNames = @('probe-ghost-a', 'probe-ghost-b', 'aigoprobe')
 $script:FailedLogonsMade = 0
+$script:AdminUser = 'aigoadmin'
+$script:AdminPw = $null
+$script:AdminReady = $false
+$script:AdminLocal = $null
 $script:LogonAuditGuid = '{0CCE9215-69AE-11D9-BED3-505054503030}'
 
 Add-Type -AssemblyName System.Core
@@ -53,6 +57,18 @@ public static class ProbeNative
 
     [DllImport("advapi32.dll", SetLastError = true)]
     static extern bool DeregisterEventSource(IntPtr log);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool GetTokenInformation(IntPtr token, int infoClass, out int info, int infoLength, out int returnLength);
+
+    // 1 = the token is not split, 2 = full (elevated), 3 = limited (filtered). Negative = Windows error.
+    public static int ElevationType(IntPtr token)
+    {
+        int value;
+        int length;
+        if (GetTokenInformation(token, 18, out value, 4, out length)) { return value; }
+        return -Marshal.GetLastWin32Error();
+    }
 
     // Returns 0 when the logon worked, otherwise the Windows error number.
     public static int Logon(string user, string domain, string password, int logonType, out IntPtr token)
@@ -189,11 +205,12 @@ function Invoke-Tool {
         [string]$Password = '',
         [bool]$ShowOutput = $true,
         [bool]$Quiet = $false,
+        [bool]$LoadProfile = $false,
         [int]$MaxShow = 8000
     )
     $shown = $Display
     if (-not $shown) { $shown = "$File $Arguments" }
-    if ($AsUser) { $shown = "$shown   [run as the standard user $AsUser]" }
+    if ($AsUser) { $shown = "$shown   [run as the account $AsUser]" }
     $result = New-Object psobject -Property @{ Started = $false; ExitCode = $null; Text = ''; StdErr = ''; Encoding = ''; Length = 0 }
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -209,7 +226,7 @@ function Invoke-Tool {
         $psi.UserName = $AsUser
         $psi.Domain = $env:COMPUTERNAME
         $psi.Password = (ConvertTo-SecureString $Password -AsPlainText -Force)
-        $psi.LoadUserProfile = $false
+        $psi.LoadUserProfile = $LoadProfile
     }
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
@@ -296,7 +313,7 @@ function Read-Log {
 
 # Counts events without keeping them. With $Render it also asks for each event's XML.
 function Read-Count {
-    param([string]$Path, [string]$XPath = '*', [int]$Max = 1000, [bool]$Render = $false)
+    param([string]$Path, [string]$XPath = '*', [int]$Max = 1000, [bool]$Render = $false, [bool]$Message = $false)
     $q = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery($Path, [System.Diagnostics.Eventing.Reader.PathType]::LogName, $XPath)
     $q.ReverseDirection = $true
     $reader = New-Object System.Diagnostics.Eventing.Reader.EventLogReader($q)
@@ -308,6 +325,13 @@ function Read-Count {
             if ($null -eq $ev) { break }
             $n++
             if ($Render) { $chars += $ev.ToXml().Length }
+            if ($Message) {
+                try {
+                    $text = $ev.FormatDescription()
+                    if ($text) { $chars += $text.Length }
+                }
+                catch { }
+            }
             $ev.Dispose()
         }
     }
@@ -317,7 +341,8 @@ function Read-Count {
 
 function Get-Shape([string]$Xml) {
     $doc = New-Object System.Xml.XmlDocument
-    $doc.LoadXml($Xml)
+    try { $doc.LoadXml($Xml) }
+    catch { return (New-Object psobject -Property @{ Shape = 'XML-a-strict-parser-refuses'; HasRecordId = ($Xml -match '<EventRecordID>') }) }
     $root = $doc.DocumentElement
     $parts = New-Object System.Collections.ArrayList
     $ed = $root.SelectSingleNode("*[local-name()='EventData']")
@@ -448,23 +473,20 @@ function Show-MessageForms([string]$Log, $Item, [string]$Name) {
     }
 }
 
-# Logs the standard user on, takes on its identity for a moment, and tries to read one event
-# from each of three logs through the API.
-function Test-ImpersonatedRead([string]$Label) {
+# Logs $User on with one kind of logon, describes the token Windows hands back, then takes on
+# that identity for a moment and tries to read one event from each of three logs through the API.
+# Returns $true when the logon itself worked.
+function Test-TokenRead([string]$Label, [string]$User, [string]$Pw, [int]$LogonType) {
     $tok = [IntPtr]::Zero
-    $used = $null
-    foreach ($type in 2, 4, 3) {
-        $rc = [ProbeNative]::Logon($script:ProbeUser, '.', $script:ProbePw, $type, [ref]$tok)
-        Say ("LogonUser as {0}, logon type {1} -> Windows error {2}" -f $script:ProbeUser, $type, $rc)
-        if ($rc -eq 0) { $used = $type; break }
-    }
-    if ($null -eq $used) { throw 'no logon type worked for the standard user' }
+    $rc = [ProbeNative]::Logon($User, '.', $Pw, $LogonType, [ref]$tok)
+    Say ("LogonUser as {0}, logon type {1} (2 interactive, 4 batch, 3 network) -> Windows error {2}" -f $User, $LogonType, $rc)
+    if ($rc -ne 0) { return $false }
     $id = New-Object System.Security.Principal.WindowsIdentity($tok)
     try {
         $sids = @($id.Groups | ForEach-Object { $_.Value })
-        Say ("Token of: {0}; logon type used: {1} (2 interactive, 4 batch, 3 network)" -f $id.Name, $used)
-        Say ("Token group SIDs: " + ($sids -join ' '))
-        Say ("  Administrators (S-1-5-32-544): {0}; Users (S-1-5-32-545): {1}; Event Log Readers (S-1-5-32-573): {2}; INTERACTIVE (S-1-5-4): {3}" -f ($sids -contains 'S-1-5-32-544'), ($sids -contains 'S-1-5-32-545'), ($sids -contains 'S-1-5-32-573'), ($sids -contains 'S-1-5-4'))
+        Say ("Token of {0}: elevation type {1} (1 not split, 2 full, 3 limited)" -f $id.Name, [ProbeNative]::ElevationType($tok))
+        Say ("  enabled group SIDs: " + ($sids -join ' '))
+        Say ("  Administrators (S-1-5-32-544) enabled: {0}; Users (S-1-5-32-545): {1}; Event Log Readers (S-1-5-32-573): {2}; INTERACTIVE (S-1-5-4): {3}" -f ($sids -contains 'S-1-5-32-544'), ($sids -contains 'S-1-5-32-545'), ($sids -contains 'S-1-5-32-573'), ($sids -contains 'S-1-5-4'))
         $results = New-Object System.Collections.ArrayList
         $ctx = $id.Impersonate()
         try {
@@ -481,21 +503,64 @@ function Test-ImpersonatedRead([string]$Label) {
             }
         }
         finally { $ctx.Undo() }
-        Say "RESULT ($Label), read through the API as the standard user:"
+        Say "RESULT ($Label; logon type $LogonType), read through the API:"
         foreach ($line in $results) { Say "  $line" }
     }
     finally {
         $id.Dispose()
         [void][ProbeNative]::CloseHandle($tok)
     }
+    return $true
 }
 
-function Test-ChildRead([string]$Label) {
-    Say "As a separate process started with the standard user's name and password ($Label):"
-    [void](Invoke-Tool -File 'whoami.exe' -Arguments '/groups' -AsUser $script:ProbeUser -Password $script:ProbePw)
-    foreach ($log in 'Application', 'System', 'Security') {
-        [void](Invoke-Tool -File 'wevtutil.exe' -Arguments "qe $log /c:1 /f:xml" -AsUser $script:ProbeUser -Password $script:ProbePw -ShowOutput $false)
+# Tries the logon types in order. With $All it tests every one that works; without, the first.
+function Test-ImpersonatedRead([string]$Label, [string]$User, [string]$Pw, [int[]]$Types, [bool]$All) {
+    $worked = 0
+    foreach ($type in $Types) {
+        if (Test-TokenRead $Label $User $Pw $type) {
+            $worked++
+            if (-not $All) { break }
+        }
     }
+    if ($worked -eq 0) { throw "no logon type worked for $User" }
+}
+
+function Test-ChildRead([string]$Label, [string]$User, [string]$Pw) {
+    Say "As a separate process started with the name and password of $User ($Label):"
+    [void](Invoke-Tool -File 'whoami.exe' -Arguments '/groups' -AsUser $User -Password $Pw)
+    foreach ($log in 'Application', 'System', 'Security') {
+        [void](Invoke-Tool -File 'wevtutil.exe' -Arguments "qe $log /c:1 /f:xml" -AsUser $User -Password $Pw -ShowOutput $false)
+    }
+}
+
+function New-ProbeAdmin {
+    $script:AdminPw = 'Pa1!' + [guid]::NewGuid().ToString('N').Substring(0, 10)
+    $secure = ConvertTo-SecureString $script:AdminPw -AsPlainText -Force
+    New-LocalUser -Name $script:AdminUser -Password $secure -AccountNeverExpires -PasswordNeverExpires -Description 'aigolog probe, administrator' -ErrorAction Stop | Out-Null
+    $script:AdminReady = $true
+    Say "Created the local account $($script:AdminUser) (password not shown)."
+    foreach ($sid in 'S-1-5-32-545', 'S-1-5-32-544') {
+        try {
+            Add-LocalGroupMember -SID $sid -Member $script:AdminUser -ErrorAction Stop
+            Say "Added it to the group $sid."
+        }
+        catch {
+            Say "Adding it to the group $sid raised:"
+            Say (Format-Failure $_)
+        }
+    }
+    [void](Invoke-Tool -File 'net.exe' -Arguments "user $($script:AdminUser)")
+}
+
+# Text with every character outside printable ASCII written as {U+XXXX}.
+function Show-Codes([string]$Text) {
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($ch in $Text.ToCharArray()) {
+        $n = [int]$ch
+        if ($n -ge 32 -and $n -le 126) { [void]$sb.Append($ch) }
+        else { [void]$sb.Append(('{{U+{0:X4}}}' -f $n)) }
+    }
+    return $sb.ToString()
 }
 
 function Survey-Log([string]$Log, [int]$Max) {
@@ -858,6 +923,57 @@ Section '4 events with unnamed values, and events with no readable message' {
             [void](Invoke-Tool -File 'wevtutil.exe' -Arguments ('qe Application "/q:{0}" /c:1 /rd:true /f:{1}' -f $q, $f) -SaveAs "wevtutil-application-4242-$f.txt")
         }
     }
+    Probe 'an event whose values hold awkward characters' {
+        $esc = [string][char]27
+        $values = [string[]]@(
+            ('tab' + [char]9 + 'inside'),
+            ('line one' + [char]10 + 'line two'),
+            'ampersand & less-than < greater-than > quote " apostrophe ''',
+            ($esc + '[31mred' + $esc + '[0m and a bell ' + [char]7),
+            ('greek ' + [char]0x03B5 + [char]0x03BB + [char]0x03BB + ' and a face ' + [char]0xD83D + [char]0xDE00),
+            ''
+        )
+        $rc = [ProbeNative]::Report('aigolog-probe-unregistered', 4, 4245, $values)
+        Say "ReportEvent result for event 4245, six values (0 means written): $rc"
+        Say 'The six values written: a tab inside; a line feed inside; & < > " and an apostrophe; an escape'
+        Say 'character (U+001B) twice and a bell (U+0007); three Greek letters and one character outside'
+        Say 'the basic plane (U+D83D U+DE00); an empty value.'
+        Start-Sleep -Seconds 2
+        $ev = Read-Log -Path 'Application' -XPath "*[System[Provider[@Name='aigolog-probe-unregistered'] and (EventID=4245)]]" -Max 1
+        if ($ev.Count -eq 0) {
+            Say 'The event was not found.'
+            return
+        }
+        $xml = $ev[0].Xml
+        Save-Text 'application-probe-4245-awkward.xml' $xml
+        Say 'Its XML as the API returned it; every character outside printable ASCII is written {U+XXXX}:'
+        Say (Show-Codes $xml)
+        try {
+            $settings = New-Object System.Xml.XmlReaderSettings
+            $settings.CheckCharacters = $true
+            $xr = [System.Xml.XmlReader]::Create((New-Object System.IO.StringReader($xml)), $settings)
+            try { while ($xr.Read()) { } } finally { $xr.Dispose() }
+            Say 'A reader that checks every character against the XML rules (.NET XmlReader, CheckCharacters on) ACCEPTS this XML.'
+        }
+        catch {
+            Say 'A reader that checks every character against the XML rules (.NET XmlReader, CheckCharacters on) REFUSES this XML:'
+            Say (Format-Failure $_)
+        }
+        try {
+            $doc = New-Object System.Xml.XmlDocument
+            $doc.LoadXml($xml)
+            Say 'A lenient reader (.NET XmlDocument, which does not check characters) reads these values back:'
+            $i = 0
+            foreach ($n in $doc.DocumentElement.SelectNodes("*[local-name()='EventData']/*")) {
+                $i++
+                Say ('  {0}. {1}' -f $i, (Show-Codes $n.InnerText))
+            }
+        }
+        catch {
+            Say 'A lenient reader (.NET XmlDocument) REFUSES this XML too:'
+            Say (Format-Failure $_)
+        }
+    }
     Probe 'survey of what the three logs already hold' {
         Survey-Log 'Application' 500
         Survey-Log 'System' 500
@@ -866,9 +982,8 @@ Section '4 events with unnamed values, and events with no readable message' {
 }
 
 Section '5 what a standard user may read' {
-    Say 'NOTE: UAC is off on this runner (see section 1), so the case "an administrator at an ordinary,'
-    Say 'unelevated prompt" (a filtered token) can NOT be measured here. What follows is a STANDARD USER:'
-    Say 'a member of Users only. Section 1 shows the same reads work for the elevated account running this.'
+    Say 'The account running the probe is elevated (section 1). What follows is a STANDARD USER: a member'
+    Say 'of Users only. An administrator who is not elevated is section 5b.'
     if (-not $script:ProbeUserReady) {
         Probe 'create the standard test account' { New-ProbeUser }
     }
@@ -879,14 +994,121 @@ Section '5 what a standard user may read' {
             Say "$log : read $($r.Count) event(s) as the account running the probe"
         }
     }
-    Probe 'standard user, as a separate process' { Test-ChildRead 'member of Users only' }
-    Probe 'standard user, through the API' { Test-ImpersonatedRead 'member of Users only' }
+    Probe 'standard user, as a separate process' { Test-ChildRead 'member of Users only' $script:ProbeUser $script:ProbePw }
+    Probe 'standard user, through the API' { Test-ImpersonatedRead 'member of Users only' $script:ProbeUser $script:ProbePw @(2, 4, 3) $false }
     Probe 'put the standard user in the group Event Log Readers' {
         Add-LocalGroupMember -SID 'S-1-5-32-573' -Member $script:ProbeUser -ErrorAction Stop
         Say 'Added to Event Log Readers (S-1-5-32-573).'
     }
-    Probe 'standard user in Event Log Readers, as a separate process' { Test-ChildRead 'member of Users and Event Log Readers' }
-    Probe 'standard user in Event Log Readers, through the API' { Test-ImpersonatedRead 'member of Users and Event Log Readers' }
+    Probe 'standard user in Event Log Readers, as a separate process' { Test-ChildRead 'member of Users and Event Log Readers' $script:ProbeUser $script:ProbePw }
+    Probe 'standard user in Event Log Readers, through the API' { Test-ImpersonatedRead 'member of Users and Event Log Readers' $script:ProbeUser $script:ProbePw @(2, 4, 3) $false }
+}
+
+Section '5b an administrator who is not elevated' {
+    Say 'UAC is on here (EnableLUA is 1, section 1). The account running the probe is the built-in'
+    Say 'Administrator, which Windows does not filter. A second account in Administrators shows what'
+    Say 'an ordinary administrator gets from an ordinary prompt, and with each other kind of logon.'
+    Probe 'create a test account that is a member of Administrators' { New-ProbeAdmin }
+    if (-not $script:AdminReady) { throw 'there is no administrator test account, so this section cannot run' }
+    Probe 'administrator account, as a separate process (the nearest thing to an ordinary prompt)' {
+        Test-ChildRead 'member of Administrators, started with name and password, nothing elevated' $script:AdminUser $script:AdminPw
+    }
+    Probe 'administrator account, through the API, with each kind of logon' {
+        Test-ImpersonatedRead 'member of Administrators' $script:AdminUser $script:AdminPw @(2, 4, 3) $true
+    }
+}
+
+Section '5c a file written with full rights, opened with filtered rights' {
+    if (-not $script:AdminReady) { throw 'there is no administrator test account, so this section cannot run' }
+    Probe 'give the administrator test account a profile and find its local application data folder' {
+        $r = Invoke-Tool -File 'cmd.exe' -Arguments '/c echo %LOCALAPPDATA%' -AsUser $script:AdminUser -Password $script:AdminPw -LoadProfile $true
+        $path = $r.Text.Trim()
+        if (-not $path -or $path -like '*%*' -or -not (Test-Path -LiteralPath $path)) {
+            $guess = Join-Path $env:SystemDrive ("Users\{0}\AppData\Local" -f $script:AdminUser)
+            Say "The child did not give a usable folder ('$path'); trying $guess"
+            $path = $guess
+        }
+        if (Test-Path -LiteralPath $path) {
+            $script:AdminLocal = $path
+            Say "Local application data folder of the test account: $path"
+            [void](Invoke-Tool -File 'icacls.exe' -Arguments ('"{0}"' -f $path))
+        }
+        else { Say "That folder does not exist: $path" }
+    }
+    Probe 'write a file there with the full token, then open it with the filtered token' {
+        if (-not $script:AdminLocal) { throw 'no local application data folder for the test account' }
+        $dir = Join-Path $script:AdminLocal 'aigolog-probe'
+        $file = Join-Path $dir 'written-with-full-rights.db'
+
+        $tokFull = [IntPtr]::Zero
+        $idFull = $null
+        $useFull = $false
+        $rc = [ProbeNative]::Logon($script:AdminUser, '.', $script:AdminPw, 4, [ref]$tokFull)
+        if ($rc -eq 0) {
+            $idFull = New-Object System.Security.Principal.WindowsIdentity($tokFull)
+            $useFull = (@($idFull.Groups | ForEach-Object { $_.Value }) -contains 'S-1-5-32-544')
+            Say ("Batch-logon token of the test account: elevation type {0}; Administrators enabled: {1}" -f [ProbeNative]::ElevationType($tokFull), $useFull)
+        }
+        else { Say "Batch logon of the test account failed with Windows error $rc." }
+
+        if ($useFull) {
+            $ctx = $idFull.Impersonate()
+            try {
+                [void][System.IO.Directory]::CreateDirectory($dir)
+                [System.IO.File]::WriteAllText($file, 'written with full rights')
+            }
+            finally { $ctx.Undo() }
+            Say 'The file was written by: the test account itself, with its full (unfiltered) token.'
+        }
+        else {
+            [void][System.IO.Directory]::CreateDirectory($dir)
+            [System.IO.File]::WriteAllText($file, 'written by the probe account')
+            Say 'The file was written by: the account running the probe (a DIFFERENT administrator, elevated), because the test account gave no full token.'
+        }
+        if ($null -ne $idFull) { $idFull.Dispose() }
+        if ($tokFull -ne [IntPtr]::Zero) { [void][ProbeNative]::CloseHandle($tokFull) }
+
+        Say ("Owner of the file: {0}" -f (Get-Acl -LiteralPath $file).Owner)
+        [void](Invoke-Tool -File 'icacls.exe' -Arguments ('"{0}"' -f $file))
+
+        $tokLim = [IntPtr]::Zero
+        $rc = [ProbeNative]::Logon($script:AdminUser, '.', $script:AdminPw, 2, [ref]$tokLim)
+        if ($rc -ne 0) { throw "interactive logon of the test account failed with Windows error $rc" }
+        $idLim = New-Object System.Security.Principal.WindowsIdentity($tokLim)
+        try {
+            $adminOn = (@($idLim.Groups | ForEach-Object { $_.Value }) -contains 'S-1-5-32-544')
+            Say ("Interactive-logon token of the test account: elevation type {0}; Administrators enabled: {1}" -f [ProbeNative]::ElevationType($tokLim), $adminOn)
+            $results = New-Object System.Collections.ArrayList
+            $ctx = $idLim.Impersonate()
+            try {
+                foreach ($mode in 'Read', 'ReadWrite') {
+                    try {
+                        $fs = [System.IO.File]::Open($file, [System.IO.FileMode]::Open, [System.IO.FileAccess]$mode)
+                        $fs.Dispose()
+                        [void]$results.Add("open the file for ${mode}: ALLOWED")
+                    }
+                    catch { [void]$results.Add("open the file for ${mode}: REFUSED`n" + (Format-Failure $_)) }
+                }
+                try {
+                    [System.IO.File]::WriteAllText((Join-Path $dir 'written-with-filtered-rights.db-journal'), 'x')
+                    [void]$results.Add('create a second file beside it: ALLOWED')
+                }
+                catch { [void]$results.Add("create a second file beside it: REFUSED`n" + (Format-Failure $_)) }
+                try {
+                    [System.IO.File]::Delete($file)
+                    [void]$results.Add('delete the file: ALLOWED')
+                }
+                catch { [void]$results.Add("delete the file: REFUSED`n" + (Format-Failure $_)) }
+            }
+            finally { $ctx.Undo() }
+            Say 'RESULT, with the filtered token of the same account:'
+            foreach ($line in $results) { Say "  $line" }
+        }
+        finally {
+            $idLim.Dispose()
+            [void][ProbeNative]::CloseHandle($tokLim)
+        }
+    }
 }
 
 Section '6 does the readable message come with the event' {
@@ -1000,6 +1222,45 @@ Section '7 bounding a read, and how the API refuses' {
         }
         Say 'ROUGH ONLY: a shared runner, through .NET rather than Go, background load not controlled.'
     }
+    Probe 'does a read that is already open see events written afterwards' {
+        $xp = "*[System[Provider[@Name='aigolog-probe-unregistered']]]"
+        $n0 = (Read-Count -Path 'Application' -XPath $xp -Max 10000).Count
+        $q = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery('Application', [System.Diagnostics.Eventing.Reader.PathType]::LogName, $xp)
+        $q.ReverseDirection = $false
+        $reader = New-Object System.Diagnostics.Eventing.Reader.EventLogReader($q)
+        try {
+            $got = 0
+            while ($got -lt $n0) {
+                $ev = $reader.ReadEvent()
+                if ($null -eq $ev) { break }
+                $got++
+                $ev.Dispose()
+            }
+            Say "The log held $n0 events of the probe's source. Read $got of them from one open query, oldest first, and did not ask for more."
+            $rc = [ProbeNative]::Report('aigolog-probe-unregistered', 4, 4246, [string[]]@('written after the read caught up'))
+            Start-Sleep -Seconds 2
+            $extra = 0
+            while ($extra -lt 5) {
+                $ev = $reader.ReadEvent()
+                if ($null -eq $ev) { break }
+                $extra++
+                $ev.Dispose()
+            }
+            Say "Then one more event was written (result $rc, 0 means written). Asking the SAME open query for more returned $extra event(s)."
+            if ($extra -gt 0) { Say 'So an open query DOES hand over events written after it was opened: a read needs its own stopping rule.' }
+            else { Say 'So an open query does NOT hand over events written after it was opened.' }
+        }
+        finally { $reader.Dispose() }
+    }
+    Probe 'rough cost of asking for the readable message as well (a lead, not a measurement)' {
+        foreach ($run in 1, 2) {
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            $c = Read-Count -Path 'Security' -XPath '*' -Max 3000 -Render $true -Message $true
+            $sw.Stop()
+            Say ("Run {0}: {1} Security events read, rendered to XML and formatted to a message ({2} characters) in {3} ms" -f $run, $c.Count, $c.Characters, $sw.ElapsedMilliseconds)
+        }
+        Say 'ROUGH ONLY, as above. Compare with the XML-only figure in the probe before this one.'
+    }
 }
 
 Section '8 tidy up and list what was captured' {
@@ -1009,14 +1270,19 @@ Section '8 tidy up and list what was captured' {
             Say "Removed the local account $($script:ProbeUser)."
         }
     }
+    Probe 'remove the administrator test account' {
+        if ($script:AdminReady) {
+            Remove-LocalUser -Name $script:AdminUser -ErrorAction Stop
+            Say "Removed the local account $($script:AdminUser)."
+        }
+    }
     Probe 'captured files' {
         foreach ($f in (Get-ChildItem -Path $script:Cap | Sort-Object Name)) { Say ('  {0,9}  {1}' -f $f.Length, $f.Name) }
     }
 }
 
 Say ''
-Say 'NOT MEASURED BY THIS PROBE: an administrator at an unelevated prompt (UAC is off here); whether a'
-Say 'database written by an elevated run can be opened by an unelevated one; reading speed in Go.'
+Say 'NOT MEASURED BY THIS PROBE: reading speed in Go; a real desktop session with a consent prompt.'
 Say ("Sections that failed as a whole: {0}" -f $(if ($script:FailedSections.Count) { $script:FailedSections -join '; ' } else { 'none' }))
 Say ("Probes that failed: {0}" -f $(if ($script:FailedProbes.Count) { $script:FailedProbes -join '; ' } else { 'none' }))
 Say 'End of the aigolog Windows Event Log probe.'
