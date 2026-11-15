@@ -1,0 +1,51 @@
+# Throwaway probe, on a throwaway branch. It is not part of the product and is not meant to be
+# merged. It runs one script on GitHub's Windows machines to see what the Windows Event Log hands
+# a reader (design section 7.1). The script makes its own test events on that disposable machine
+# and prints only those. Nothing here uses a secret.
+name: windows-events-probe
+
+on:
+  push:
+    branches:
+      - probe/windows-events
+
+permissions: {}
+
+concurrency:
+  group: windows-events-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: probe (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-2025
+          - windows-2022
+          - windows-11-arm
+    steps:
+      - name: Check out the probe script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the probe
+        shell: powershell
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .github\probe\windows-events.ps1
+          exit $LASTEXITCODE
+
+      - name: Upload what was captured
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: capture-${{ matrix.os }}
+          path: ${{ runner.temp }}/capture
+          if-no-files-found: error
+          retention-days: 5
