@@ -1,3 +1,7 @@
+SUPERSEDED 2026-11-16 by `docs/handoff/windows-session-2.md`. Do not follow this file: it does not
+keep raw captures out of the repository, does not check the masking, and does not say what to do
+about elevation. It is kept only as a record.
+
 # Handoff: real Windows events for the Event Log reader
 
 For: an agent session started on the owner's Windows machine, after fetching the branch
