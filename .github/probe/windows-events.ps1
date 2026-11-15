@@ -27,6 +27,8 @@ $script:ProbeUser = 'aigoprobe'
 $script:ProbePw = $null
 $script:ProbeUserReady = $false
 $script:NewestSystemRecord = $null
+$script:ProbeNames = @('probe-ghost-a', 'probe-ghost-b', 'aigoprobe')
+$script:FailedLogonsMade = 0
 $script:LogonAuditGuid = '{0CCE9215-69AE-11D9-BED3-505054503030}'
 
 Add-Type -AssemblyName System.Core
@@ -383,19 +385,67 @@ function Show-Event($Item, [string]$SaveAs) {
 function New-ProbeUser {
     # 14 characters: longer ones make "net user" stop and ask a question.
     $script:ProbePw = 'Pb1!' + [guid]::NewGuid().ToString('N').Substring(0, 10)
+    $created = $false
     try {
         $secure = ConvertTo-SecureString $script:ProbePw -AsPlainText -Force
         New-LocalUser -Name $script:ProbeUser -Password $secure -AccountNeverExpires -PasswordNeverExpires -Description 'aigolog probe, standard user' -ErrorAction Stop | Out-Null
-        Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $script:ProbeUser -ErrorAction Stop
-        Say "Created the local account $($script:ProbeUser) with New-LocalUser and put it in the Users group (password not shown)."
+        $created = $true
+        Say "Created the local account $($script:ProbeUser) with New-LocalUser (password not shown)."
     }
     catch {
         Say 'New-LocalUser did not work; trying net user instead.'
         Say (Format-Failure $_)
         $r = Invoke-Tool -File 'net.exe' -Arguments ('user {0} {1} /add' -f $script:ProbeUser, $script:ProbePw) -Display "net.exe user $($script:ProbeUser) <password not shown> /add"
-        if ($r.ExitCode -ne 0) { throw 'could not create the test account' }
+        if ($r.ExitCode -eq 0) { $created = $true }
     }
+    if (-not $created) { throw 'could not create the test account' }
     $script:ProbeUserReady = $true
+
+    # Group membership is its own step: a failure here must not undo the account.
+    try {
+        Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $script:ProbeUser -ErrorAction Stop
+        Say 'Added it to the Users group (so it was not a member straight after creation).'
+    }
+    catch {
+        Say 'Adding it to the Users group raised this (a "member exists" error means it already was one):'
+        Say (Format-Failure $_)
+    }
+    Say 'The account as Windows now describes it (look at "Local Group Memberships"):'
+    [void](Invoke-Tool -File 'net.exe' -Arguments "user $($script:ProbeUser)")
+}
+
+# The probe's own failed logons since it started. Other failed logons on the machine are counted
+# but never shown or saved.
+function Get-ProbeFailedLogons([int]$Max) {
+    $q = "*[System[(EventID=4625) and $($script:SinceClause)]]"
+    $all = Read-Log -Path 'Security' -XPath $q -Max $Max -WithMessage $true
+    $own = New-Object System.Collections.ArrayList
+    foreach ($e in $all) {
+        $who = (Get-DataMap $e.Xml)['TargetUserName']
+        if ($script:ProbeNames -contains $who) { [void]$own.Add($e) }
+    }
+    return (New-Object psobject -Property @{ Query = $q; AllCount = $all.Count; Own = $own })
+}
+
+# One event, as the API gives its message and as wevtutil shows it in three formats.
+function Show-MessageForms([string]$Log, $Item, [string]$Name) {
+    Say ("Event {0}, record {1}, through the API:" -f $Item.Id, $Item.RecordId)
+    if ($Item.MessageError) { Say "  asking for the message failed: $($Item.MessageError)" }
+    elseif ([string]::IsNullOrEmpty($Item.Message)) { Say '  the API returned no message' }
+    else {
+        $first = ($Item.Message -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1
+        if ($null -eq $first) { Say '  the message holds only blank space' }
+        else {
+            $first = $first.Trim()
+            Say "  first line of the message: $first"
+            Say ("  that line appears in the plain event XML: {0}" -f $Item.Xml.Contains($first))
+            Say ("  the message is {0} characters; the plain XML is {1} characters" -f $Item.Message.Length, $Item.Xml.Length)
+        }
+    }
+    $one = "*[System[(EventRecordID=$($Item.RecordId))]]"
+    foreach ($f in 'text', 'xml', 'RenderedXml') {
+        [void](Invoke-Tool -File 'wevtutil.exe' -Arguments ('qe {0} "/q:{1}" /c:1 /f:{2}' -f $Log, $one, $f) -SaveAs "wevtutil-$Name-$f.txt")
+    }
 }
 
 # Logs the standard user on, takes on its identity for a moment, and tries to read one event
@@ -543,17 +593,28 @@ Section '1 the machine' {
     Probe 'build tools on the path' {
         foreach ($t in 'go', 'git', 'gcc', 'clang', 'cl', 'zig') {
             $c = Get-Command $t -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($c) { Say "TOOL $t -> $($c.Source)" } else { Say "TOOL $t -> not on the path" }
+            if ($c) { Say "TOOL $t -> $($c.Path)" } else { Say "TOOL $t -> not on the path" }
         }
         $go = Get-Command go -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($go) {
-            [void](Invoke-Tool -File $go.Source -Arguments 'version')
-            [void](Invoke-Tool -File $go.Source -Arguments 'env GOOS GOARCH CGO_ENABLED CC')
+            [void](Invoke-Tool -File $go.Path -Arguments 'version')
+            [void](Invoke-Tool -File $go.Path -Arguments 'env GOOS GOARCH CGO_ENABLED CC')
         }
         $gcc = Get-Command gcc -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($gcc) { [void](Invoke-Tool -File $gcc.Source -Arguments '--version' -MaxShow 300) }
+        if ($gcc) { [void](Invoke-Tool -File $gcc.Path -Arguments '--version' -MaxShow 300) }
         $git = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($git) { [void](Invoke-Tool -File $git.Source -Arguments '--version') }
+        if ($git) { [void](Invoke-Tool -File $git.Path -Arguments '--version') }
+    }
+    Probe 'which accounts may log on, and how (user rights of this machine)' {
+        $cfg = Join-Path $script:TempRoot 'user-rights.inf'
+        [void](Invoke-Tool -File 'secedit.exe' -Arguments ('/export /cfg "{0}" /areas USER_RIGHTS' -f $cfg) -ShowOutput $false)
+        if (Test-Path $cfg) {
+            $rights = @(Get-Content -Path $cfg | Where-Object { $_ -match '^Se(Deny)?(Interactive|Batch|Network|RemoteInteractive|Service)LogonRight' })
+            Say 'Logon rights (S-1-5-32-544 Administrators, S-1-5-32-545 Users, S-1-5-32-551 Backup Operators, S-1-1-0 Everyone):'
+            foreach ($line in $rights) { Say "  $line" }
+            if ($rights.Count -eq 0) { Say '  (no logon-right line found in what secedit wrote)' }
+        }
+        else { Say 'secedit wrote no file.' }
     }
     Probe 'the event log tool and the three logs' {
         $r = Invoke-Tool -File 'wevtutil.exe' -Arguments 'el' -SaveAs 'machine-channels.txt' -ShowOutput $false
@@ -589,8 +650,10 @@ Section '2 failed logons' {
             $wrong = 'Wrong-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
             $rc = [ProbeNative]::Logon($a[0], '.', $wrong, $a[1], [ref]$tok)
             if ($tok -ne [IntPtr]::Zero) { [void][ProbeNative]::CloseHandle($tok) }
+            if ($rc -ne 0) { $script:FailedLogonsMade++ }
             Say ("LogonUser name={0} logon type={1} wrong password -> Windows error {2}" -f $a[0], $a[1], $rc)
         }
+        Say "Failed logons the probe made: $($script:FailedLogonsMade)"
         if ($script:ProbeUserReady) {
             $tok = [IntPtr]::Zero
             $rc = [ProbeNative]::Logon($script:ProbeUser, '.', $script:ProbePw, 3, [ref]$tok)
@@ -600,10 +663,11 @@ Section '2 failed logons' {
         Start-Sleep -Seconds 4
     }
     Probe 'read the failed logons back (event 4625)' {
-        $q = "*[System[(EventID=4625) and $($script:SinceClause)]]"
-        Say "QUERY on Security: $q"
-        $ev = Read-Log -Path 'Security' -XPath $q -Max 60 -WithMessage $true
-        Say "Events 4625 written since the probe started: $($ev.Count) (the probe made 14, or 10 without the test account)"
+        $got = Get-ProbeFailedLogons 300
+        $ev = $got.Own
+        Say "QUERY on Security: $($got.Query)"
+        Say "Events 4625 since the probe started: $($got.AllCount). Of those, for the probe's own test names: $($ev.Count). The probe made $($script:FailedLogonsMade) failed logons."
+        Say 'Only the probe''s own are shown and saved.'
         $seen = @{}
         $i = 0
         foreach ($e in $ev) {
@@ -687,8 +751,13 @@ Section '3 services that fail' {
             Say "The service $target does not exist on this image, so method B was not run."
             return
         }
+        Say "$target as found: state $($svc.State), start mode $($svc.StartMode), process $($svc.ProcessId)"
+        if ($svc.StartMode -eq 'Disabled') {
+            Say "$target is disabled on this image; setting it to manual start so the test can use it."
+            Set-Service -Name $target -StartupType Manual -ErrorAction Stop
+        }
         if ($svc.State -ne 'Running') {
-            Say "$target is in state $($svc.State); starting it."
+            Say "Starting $target."
             Start-Service -Name $target -ErrorAction Stop
             Start-Sleep -Seconds 3
         }
@@ -821,35 +890,22 @@ Section '5 what a standard user may read' {
 }
 
 Section '6 does the readable message come with the event' {
-    $targets = @(
-        @('Security', "*[System[(EventID=4625) and $($script:SinceClause)]]", 'security-4625'),
-        @('System', "*[System[Provider[@Name='Service Control Manager'] and (EventID=7031 or EventID=7034) and $($script:SinceClause)]]", 'system-scm-crash')
-    )
-    foreach ($t in $targets) {
-        $log = $t[0]
-        $q = $t[1]
-        $name = $t[2]
-        Probe "message of one event: $name" {
-            $ev = Read-Log -Path $log -XPath $q -Max 1 -WithMessage $true
-            if ($ev.Count -eq 0) {
-                Say "No event matched on ${log}: $q"
-                return
-            }
-            $e = $ev[0]
-            Say ("Event {0}, record {1}, through the API:" -f $e.Id, $e.RecordId)
-            if ($e.MessageError) { Say "  asking for the message failed: $($e.MessageError)" }
-            elseif ([string]::IsNullOrEmpty($e.Message)) { Say '  the API returned no message' }
-            else {
-                $first = (($e.Message -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
-                Say "  first line of the message: $first"
-                Say ("  that line appears in the plain event XML: {0}" -f $e.Xml.Contains($first))
-                Say ("  the message is {0} characters; the plain XML is {1} characters" -f $e.Message.Length, $e.Xml.Length)
-            }
-            $one = "*[System[(EventRecordID=$($e.RecordId))]]"
-            foreach ($f in 'text', 'xml', 'RenderedXml') {
-                [void](Invoke-Tool -File 'wevtutil.exe' -Arguments ('qe {0} "/q:{1}" /c:1 /f:{2}' -f $log, $one, $f) -SaveAs "wevtutil-$name-$f.txt")
-            }
+    Probe 'message of one failed logon (the probe''s own)' {
+        $got = Get-ProbeFailedLogons 300
+        if ($got.Own.Count -eq 0) {
+            Say 'There is no failed logon of the probe''s own to look at.'
+            return
         }
+        Show-MessageForms 'Security' $got.Own[0] 'security-4625'
+    }
+    Probe 'message of one service crash' {
+        $q = "*[System[Provider[@Name='Service Control Manager'] and (EventID=7031 or EventID=7034) and $($script:SinceClause)]]"
+        $ev = Read-Log -Path 'System' -XPath $q -Max 1 -WithMessage $true
+        if ($ev.Count -eq 0) {
+            Say "No event matched on System: $q"
+            return
+        }
+        Show-MessageForms 'System' $ev[0] 'system-scm-crash'
     }
 }
 
@@ -918,8 +974,9 @@ Section '7 bounding a read, and how the API refuses' {
         }
     }
     Probe 'save the probe''s own events as event log files, and read those files back' {
+        $ownNames = ($script:ProbeNames | ForEach-Object { "Data[@Name='TargetUserName']='$_'" }) -join ' or '
         $exports = @(
-            @('Security', 'security-4625-since-start.evtx', "*[System[(EventID=4625) and $($script:SinceClause)]]"),
+            @('Security', 'security-4625-since-start.evtx', "*[System[(EventID=4625) and $($script:SinceClause)] and EventData[$ownNames]]"),
             @('System', 'system-scm-since-start.evtx', "*[System[Provider[@Name='Service Control Manager'] and $($script:SinceClause)]]"),
             @('Application', 'application-probe-sources.evtx', "*[System[Provider[@Name='aigolog-probe-unregistered' or @Name='aigolog-probe-eventcreate']]]")
         )
