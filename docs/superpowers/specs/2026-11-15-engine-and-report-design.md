@@ -1,10 +1,11 @@
 # aigolog part 1: the engine and the one-shot report
 
-Status: draft under revision. After the review rounds the owner moved the Event Log reader into
-part 1, allowed C code, and chose how the Event Log is read. The reader's details (section 7.1)
-wait for real events from the owner's Windows machine, asked for in
-`docs/handoff/windows-session.md`. The revisions made since the review rounds have not been
-reviewed.
+Status: draft, not yet approved by the owner. After the first review the owner moved the Event
+Log reader into part 1, allowed C code, and chose how the Event Log is read. Those revisions went
+through a second review of three rounds. The reader's details (section 7.1) still wait for real
+events. The owner has since decided that they come from a Windows virtual machine on the
+development machine (section 8, A9), so the handoff files under `docs/handoff/` are on hold. The
+details will get a short review of their own when the events are in.
 Date: 2026-11-15.
 
 This document describes the first of two parts of aigolog. It is written so that a builder can
@@ -128,7 +129,8 @@ the machine whose logs it reads. No accounts, no server, no other users.
 **Anti-goals** (the product has failed if any of these is true, even if everything else works)
 
 - A finding shows a figure that no stored query answer contains.
-- Log content leaves the machine when no cloud model or remote endpoint has been configured.
+- The program sends log content to any address other than the one the user configured, or sends
+  it at all when no model is configured.
 - Supporting a new kind of text log needs a parser written for it.
 - Text taken from a log changes what the program or the model does (section 7.11).
 
@@ -257,24 +259,27 @@ input  ->  reader  ->  records  ->  pattern miner  ->  store (one row per record
                                   findings  ->  evidence rule  ->  report
 ```
 
-Everything left of the model is plain code and gives the same output for the same input. The model
-never sees the whole log.
+Everything left of the model is plain code, and from the same records it gives the same output.
+The model never sees the whole log.
 
 ### 7.1 Readers and records
 
 A reader turns an input into records. A record carries:
 
-- which source it came from, and its position there (line number of its first line, byte offset,
-  length)
+- which source it came from, and its position there: for text, the line number of its first line,
+  its byte offset and its length; for a Windows event, the record number Windows gave it
 - its time, when one was found
 - its raw text, kept exactly
 - optionally, named fields. A reader that supplies named fields may mark one field as the entry's
   kind (an event identifier, for example) and one as its free text (the message).
 
-The reader is the plug point for more kinds of log. Part 1 ships three readers. The first two are
-chosen by looking at the first lines of the input, with a flag to force either. Looking ahead must
-not use up input, so that the choice also works on standard input. The third reads the Windows
-Event Log.
+The reader is the plug point for more kinds of log. Part 1 ships three readers: text lines, JSON
+lines and Windows events. For a file or standard input the reader is chosen by looking at the
+start of the input: JSON objects mean JSON lines; an `Event` element, alone or inside one
+enclosing element, means Windows event XML; anything else means text. A `--format` flag with the
+values `text`, `jsonl` and `eventxml` forces the choice. Looking ahead must not use up input, so
+that the choice also works on standard input. A live Windows log is named with `--eventlog`
+instead.
 
 **The Windows Event Log.** The owner moved this reader into part 1 after the review rounds and
 chose how it reads: "A Windows' own API" (section 6.6).
@@ -282,30 +287,46 @@ chose how it reads: "A Windows' own API" (section 6.6).
 - **Getting the events.** On Windows, aigolog asks Windows' own Event Log API for a live log by
   name (Security, System, Application or any other) or for an exported log file, and receives
   each event as XML. The calls are made directly from Go, the way Elastic's winlogbeat makes them
-  (section 9); no C code is involved. This part exists only in the Windows build.
+  (section 9); no C code is involved. This part exists only in the Windows build. For each event
+  it hands the decoder two things: the event's XML, and the event's readable message when Windows
+  can produce one, which takes a separate call and the publisher's own data on that machine
+  (section 9).
 - **Decoding them.** A decoder turns one event's XML into one record. It is ordinary Go, runs on
   every system, and is what the tests exercise on the development machine, from events captured
-  on Windows. The same decoder reads event XML from a file or from standard input, so the output
-  of Windows' `wevtutil` tool can be analysed on any system. That route is also the fallback if
-  the direct calls prove hard to get right.
-- **What a record carries.** The time the event was created. As its kind, the provider's name
-  together with the event's number. As named fields: the event's level, the computer, the log it
-  came from, and the event's own values, each under its own name where the event names it and
-  under its position where it does not. The whole XML as its raw text. The event's readable
-  message is the record's free text when Windows can supply it; a record is complete without it.
+  on Windows. The same decoder reads event XML from a file or from standard input (the `eventxml`
+  format above), so the output of Windows' `wevtutil` tool can be analysed on any system; such
+  input carries no readable message. A stream is a run of `Event` elements, with or without one
+  element enclosing them all, and each `Event` is decoded on its own. That route is also the
+  fallback if the direct calls prove hard to get right.
+- **What a record carries.** The time the event was created. Its record number, as its position.
+  As its kind, the provider's name together with the event's number. Named fields in two separate
+  groups, so that their names cannot collide: the event's system fields (its level, the computer,
+  the log it came from) and the event's own values. Each of the event's own values is known by
+  its position, counting from one, and a value that the event names is known by that name as
+  well. The whole XML as its raw text.
+- **The readable message.** It is carried for people and for the model to read, and is shown with
+  a cited event. It is never mined for patterns or values, because the same event can have a
+  different message, or none, on another machine or in another language. An event's kind and
+  values come from its XML alone, so the same XML always gives the same record.
 - **Command line (my call).** `aigolog analyze --eventlog <name>` for a live log and
-  `aigolog analyze <file>.evtx` for an exported one. Both work on Windows only; elsewhere they
-  stop with a message that says so.
+  `aigolog analyze <file>.evtx` for an exported one, both on Windows only; elsewhere they stop
+  with a message that says so. Event XML in a file or on standard input works on every system.
+- **How much is read (my call).** A live log is read up to the newest event present when the read
+  begins; events that arrive later are part 2's business. A log can hold a very large number of
+  events, so the read is also bounded: by default the most recent seven days, changed with
+  `--since` and `--max-events`. The report's header states the bound that applied.
 - **Rights.** Reading some logs needs rights the user may not have; the Security log is the usual
   case. When Windows refuses, aigolog says which log it could not read and why, and exits with a
   distinct code. It never shows an empty log in place of a refusal.
 - **Coverage.** The report states how many events were read and the time they span, because a log
   may no longer hold its older events.
 
-Nothing about this reader can be run on the development machine. Four things are settled only by
-real events from the owner's Windows machine (section 14): whether the values of service events
-are named; which events a failed logon and a failing service produce there; what a read of the
-Security log without elevation returns; and how fast events arrive through the API.
+Nothing about this reader runs on Linux itself. These are settled only on a real Windows system
+(test A9 in section 8 says which): whether the values of service events are named; which
+events a failed logon and a failing service produce there; what a read of the Security log without
+elevation returns; whether an event's XML carries its record number; how a live read is bounded
+and where it stops; whether a database written from an elevated prompt can be opened from the same
+user's ordinary prompt; and how fast events arrive through the API.
 
 **Text lines.**
 
@@ -322,11 +343,18 @@ text and the time are taken from fields with common names, a short list the buil
 that is not valid JSON is kept as a text record. Two reasons to include it now: JSON lines are
 line-oriented text, so goal G3 would be false without it; and a second reader proves the
 named-field contract in a reader that can be tested on any machine. It also gives a path to the
-systemd journal without linking to its library: `journalctl -o json` piped into standard input. That export must be read as it comes
-(section 9): the time is in `__REALTIME_TIMESTAMP`, a string of digits giving microseconds since
-1970; the free text is in `MESSAGE`; the unit is in `UNIT` or `USER_UNIT`; and every value is a
-string, so types are worked out from the values. More generally, a time held in a field may be a
-count of seconds, milliseconds or microseconds since 1970.
+systemd journal without linking to its library: `journalctl -o json` piped into standard input.
+That export must be read as it comes (section 9). The time is in `__REALTIME_TIMESTAMP`, a string
+of digits giving microseconds since 1970, and the free text is in `MESSAGE`. A value is usually a
+string, so types are worked out from the values. systemd's documentation adds three other shapes
+that the reader must accept: a list of numbers for text that is not valid UTF-8, which is turned
+back into text; a list for a field that occurs more than once; and null for a field too large to
+export. Every field is kept as a named field. The manager's own lines about a unit name it in
+`UNIT` or `USER_UNIT`; lines that a service writes itself carry `_SYSTEMD_UNIT`.
+
+More generally, a time held in a field may be a count of seconds, milliseconds or microseconds
+since 1970. Only the field taken as the entry's time is read that way, and the unit is the one
+that puts the value between the years 2000 and 2100.
 
 Common to both: input is one or more files, or standard input. Several files go into one analysis,
 and each finding says which source it is about **(my call)**. `analyze` reads to the end of the
@@ -340,6 +368,9 @@ on the first lines of the file, and keeps the layout that fits. Rules:
 
 - Times are taken as written. No time zone is assumed or converted; a zone is shown only when the
   log states one.
+- A time that carries a zone, or is a count since 1970, is an exact moment. A stamp without a zone
+  is not. When one analysis mixes the two, the order between sources can be off by the zone's
+  offset, and the report says which sources had exact times.
 - Syslog-style stamps carry no year. Years are worked out for each source on its own, from the end
   backwards. The anchor is the file's modification time, or the current time for standard input.
   The last record gets the latest year that does not put it after the anchor. Going back, each
@@ -382,8 +413,9 @@ For records with named fields:
 
 - The pattern is identified by the kind field when the reader marked one; otherwise by the mined
   pattern of the free text when there is free text; otherwise by the set of field names.
-- The named fields are slots that keep their names. Slots mined from the free text are added after
-  them.
+- The named fields are slots that keep their names. For JSON lines, slots mined from the free text
+  are added after them. A Windows event's readable message is never mined (section 7.1), so an
+  event has only its named and numbered values.
 
 For both:
 
@@ -404,9 +436,10 @@ never pasted into query text.
 **(my call)** The store is SQLite through the pure-Go port `modernc.org/sqlite`, behind an
 interface so that it can be replaced. Its documentation states it is free of cgo and lists Windows
 targets (section 9). It stays the starting point because it needs no C compiler on any machine
-that builds. Now that the owner allows C code, SQLite's own C library or DuckDB may take its place
-if A6 measures the pure-Go port too slow; DuckDB's bundled Windows library is for amd64 only
-(section 9).
+that builds. Now that the owner allows C code, SQLite's own C library may take its place if A6
+measures the pure-Go port too slow. Whatever replaces it must build for all four targets of
+section 5. DuckDB's Go package bundles a Windows library for amd64 only (section 9), so it does
+not qualify unless the owner drops a target.
 
 **(my call)** The expected table layout is one table of records and one table of values, with a
 row for each record and slot, where every slot of every pattern has a number. Combining slots
@@ -514,7 +547,10 @@ questions with the user's own arguments, so a person can check a different idea 
 the program.
 
 A model that calls tools is preferred, not required. A model that cannot call tools still gets the
-summary, whose blocks are answers, and can report from those.
+summary, whose blocks are answers, and can report from those. The program offers the tools with
+its first request. If the endpoint refuses that request because of them, the program asks again
+once without tools and goes on from the summary alone. A configuration switch turns tools off
+from the start.
 
 ### 7.7 The investigation
 
@@ -557,6 +593,9 @@ Go's standard library. The core does not know what is behind the address.
   it may use. For OpenRouter that means its settings for no fallback to another provider, for
   zero data retention and for named providers; the program's documentation gives that example.
   **(my call: these are configuration with a documented example, not forced by the program)**
+  A field that the program sets itself (the model, the messages, the tools and their choice,
+  streaming, the response format) cannot be given this way; a configuration that tries is refused
+  at start.
 
 Part 1 has no client for any one provider's own interface, and no default cloud model. A Claude
 model is reached through an aggregator. A provider's own client is added later only if the
@@ -573,17 +612,18 @@ values from the log, such as addresses and user names. The whole log is never se
 Privacy rules:
 
 - Nothing is sent anywhere unless a model is configured. There is no default model.
-- What the program says about where data went depends on the configured address, not on the kind
-  of endpoint. Only when the address is the machine itself does it say that nothing left the
-  machine. Otherwise it names the host.
-- The program cannot know what a host does with a request. An aggregator passes it to another
-  company, and by default may pass it to a second one when the first fails (section 9). So the
-  report also prints the request fields set in configuration, and when none restrict the
-  providers it says that the host chose where the data went.
+- What the program says about where data went is only what it knows: the address it sent to, and
+  the model name the reply carried. It never says that nothing left the machine. A server on the
+  machine itself can pass a request on to a cloud (Ollama's can, section 9). An aggregator passes
+  it to another company, and by default may pass it to a second one when the first fails
+  (section 9).
+- The report prints the request fields set in configuration exactly as they are, and says that
+  the program cannot tell whether the host honoured them. When none are set and the address is
+  not the machine itself, it says that the host decides where the data goes.
 - Before the first request the program prints, on the error stream, where it is about to send and
-  what. The report's header repeats it and names the model that actually answered.
-- With no model, or an endpoint on the machine itself, the program opens no other network
-  connection.
+  what. The report's header repeats it.
+- With no model the program opens no network connection. With a model it connects to the
+  configured address and to nothing else.
 - API keys are read from the environment, never written by the program, and a key is sent only to
   the service it belongs to.
 - **(my call)** No redaction in part 1. Values go to a configured model as they are.
@@ -630,7 +670,9 @@ rejected; a correct finding passes.
   where data went, the database's path and size), the digest, the findings in order of importance, the statements that
   were not verified (section 7.9), and a footer (limits reached, token use).
 - Each finding: title and importance, statement, facts with their values, the cited lines with line
-  numbers and up to three quoted, and the command that re-runs its answers.
+  numbers and up to three quoted, and the command that re-runs its answers. For a Windows log the
+  cited entries are events, shown by their record numbers, each with its readable message when
+  there is one.
 - `--explain` adds, for each fact, the question behind its answer.
 - `--summary` prints the full summary.
 - `--json` gives the same content in one structure that carries: a format version; the sources; the
@@ -664,6 +706,10 @@ by the attacker. That text reaches the model and the user's screen, so:
 | No model configured | Print the digest and the summary; exit normally |
 | Model configured but unreachable or failing after retries | Print the digest and the summary, say why there are no findings, exit with a distinct code |
 | Model cannot call tools | It reports from the summary alone; the report says so |
+| The endpoint refuses a request because of the tools | Ask again once without tools; go on from the summary alone |
+| The configuration sets a request field that the program owns | Refused at start, with a message |
+| A live Windows log holds more than the bound | Read up to the bound; the header states it |
+| Windows refuses a log | Say which log and why; a distinct exit code; never an empty report |
 | Model returns a malformed tool call or findings | One repair attempt, then treated as failing |
 | The model declines to answer | Say so; print the digest and the summary |
 | A limit is reached | Report what was found, say which limit was reached |
@@ -686,13 +732,19 @@ size budget, and how long databases are kept. The file format is left to the bui
 
 Numbers come from section 9. What "done" means **(my call)**:
 
-- Part 1 is done on Linux when A1 to A8, A10 and A11 hold.
-- Windows support is claimed only when A9 also holds.
-- In A4 at least one cloud model, named for the run, must pass the checklists. The local model's
-  result is a measurement: it is recorded, pass or fail, and does not block. This follows the
-  owner's choice of "either", which was offered as a way to measure what a local model can do. If
-  the owner provides no key for a cloud endpoint, the local model takes the cloud model's place
-  in this rule and must pass.
+- Part 1 is done when A1 to A11 all hold. The owner moved the Event Log reader into part 1, so the
+  tests that need Windows are part of done.
+- On Windows nothing that is required may be skipped: the Event Log reader's own
+  tests run, the refusal case is exercised from a prompt without elevation, and the Windows part
+  of A4 is run with a model.
+- windows/arm64 is built but not run, unless the owner has such a machine. The record of A9 says
+  which targets were run.
+- In A4 at least one cloud model, named before the run starts, must pass the checklists. For the
+  local model the run must complete, and every finding it shows must pass the evidence rule.
+  Whether the local model also passes the checklists is a measurement: it is recorded, pass or
+  fail, and does not block. This follows the owner's choice of "either", which was offered as a
+  way to measure what a local model can do. If the owner provides no key for a cloud endpoint,
+  the local model takes the cloud model's place in this rule and must pass.
 - If no cloud model passes a checklist, the builder may change the summary and the instruction
   and try again, at most three times, and then brings the result to the owner.
 - `go test` works with no network: tests that need a fetched log or a model are skipped with a
@@ -702,7 +754,7 @@ The tests:
 
 - **A1. Builds.** The program builds for linux and windows, amd64 and arm64, with every dependency
   in place. While no C code is in use, these are `CGO_ENABLED=0` builds made on the development
-  machine. Once any C code is used, the Windows builds are made on the Windows machine or with a
+  machine. Once any C code is used, the Windows builds are made on a Windows system or with a
   cross toolchain, and that route is proven before the C code is relied on. This is the first
   implementation task, because the store has only been read, not built. If any target fails, the
   choice of store or library is settled before anything else is built.
@@ -711,9 +763,13 @@ The tests:
   probes many paths, and a JSON-lines log, each with known truth. The query tools return exactly
   that truth, from a file and from standard input. A captured JSON export of the journal for a
   restart loop (section 9) gives the unit, the number of restarts and the order of events. The
-  decoder for Windows event XML is tested the same way, from events captured on the owner's
-  Windows machine with their identifying values masked: an event whose values are named, one
-  whose values are not, and one with no message. Two analyses run at the same time finish with
+  decoder for Windows event XML is tested the same way, from events captured on Windows (A9). In
+  the virtual machine every name is made up, so nothing needs masking; anything captured on a
+  real machine has its identifying values masked first. The cases: an event whose values are named, one
+  whose values are not, and one with no message; and from a run of several events on standard
+  input, with and without an element enclosing them. Where Windows could not supply
+  an example, one written by hand from Microsoft's documented format stands in and is labelled as
+  made up. Two analyses run at the same time finish with
   correct, separate databases. Five cases pin the rules for time (section 7.2): two files that
   run from December into January keep their order; lines that cross midnight on New Year's Eve a
   few seconds out of order keep their years; an `--as-of` date that is the day of the last record
@@ -740,7 +796,7 @@ The tests:
     the service manager gave up or the loop is still running.
   - web-server-like log (generated): (1) it says one client is probing many paths; (2) it gives the
     number of requests and of distinct paths; (3) it names the client.
-  - on the owner's Windows machine, the Security log and the System log, read through the Event
+  - on Windows (A9 says where), the Security log and the System log, read through the Event
     Log reader, are checked against the first two lists: failed logons in place of failed
     passwords, and a service that keeps stopping in place of the restart loop. How such events
     are produced on that machine, if it has none, is agreed with the owner first.
@@ -759,14 +815,28 @@ The tests:
   numbers equal counts made independently with standard tools. Any of those failing
   fails the test. Time and memory are measured and recorded, and bars for later are set from them.
 - **A7. No model.** The digest and the summary are printed and the exit is normal.
-- **A8. Privacy.** With no model, and with an endpoint on the machine itself, a test shows no other
-  network connection. With an endpoint on another host, the program names that host before sending.
-- **A9. Windows.** The test suite passes on the owner's Windows machine, the Event Log reader's
-  own tests included, which can run nowhere else. A read of a log that Windows refuses reports
-  the refusal and exits with the distinct code; it does not print an empty report. This cannot be
-  done on the development machine (Linux). The owner decided how: "handoff to the agent at my windows machine
-  via github". The work is pushed to the GitHub repository with a handoff file; an agent session
-  on the Windows machine runs the tests there and reports back through the repository.
+- **A8. Privacy.** With no model, a test shows that the program opens no network connection. With
+  a model, it shows a connection to the configured address and to nothing else, and that the
+  address is named before anything is sent. A configuration that sets a request field the program
+  owns is refused. An endpoint that refuses tools is asked again once without them.
+- **A9. Windows.** The test suite passes on Windows, the Event Log reader's own tests included,
+  which can run nowhere else. A read of a log that Windows refuses, made from a prompt without
+  elevation, reports the refusal and exits with the distinct code; it does not print an empty
+  report. A live log larger than the bound is read up to the bound. The Windows part of A4 is run
+  there with a model.
+
+  Where this is done, as the owner decided ("I accept your recommendation", after first choosing
+  a handoff to their own machine):
+  - **A Windows virtual machine on the development machine.** It has a real Event Log, holds
+    nothing private, and can be changed freely, so failed logons, failing services and a user
+    without rights can all be produced on demand. The development machine is itself a virtual
+    machine with no acceleration for guests, and a compute probe ran 11 to 17 times slower inside
+    an emulated guest (section 9). It is x64 only.
+  - **A time box.** If a Windows guest cannot be brought to a command prompt that runs `wevtutil`
+    within the effort agreed with the owner, the capture moves to GitHub's hosted Windows runners,
+    which are free for a public repository and exist for x64 and ARM64 (section 9).
+  - **The owner's own Windows machine** is used only for a last check on real logs. The handoff
+    files for it are on hold, and anything captured there is masked as they describe.
 - **A10. No kind-specific code.** A test searches the program's source, tests excluded, and the
   model's instruction for words that belong to one kind of log (ssh, sshd, systemd, password and
   the like, a list kept with the test) and fails when it finds one. This is a tripwire, not proof:
@@ -802,11 +872,17 @@ pinned tag, never built or run.
 | Windows' Event Log API reads live logs and exported files and returns events as XML | Microsoft's documentation, read 2026-11-15: `EvtQuery` with `EvtQueryChannelPath` or `EvtQueryFilePath` ("You can specify an .evt, .evtx, or.etl log file"); `EvtRender` with `EvtRenderEventXml`; `EvtFormatMessage` needs the publisher's metadata. An event's values are not always named: "The Data value takes event data in an unnamed field. For example, events in classic event logs" (the Get-WinEvent page). Who may read the Security log by default was not stated on the pages read |
 | Windows' own tool for querying events | Microsoft's wevtutil page, read 2026-11-15: `wevtutil qe <Path> [/lf:<Logfile>] [/sq:<Structquery>] [/q:<Query>] [/bm:<Bookmark>] [/sbm:<Savebm>] [/rd:<Direction>] [/f:<Format>] [/l:<Locale>] [/c:<Count>] [/e:<Element>]`; its one example is `wevtutil qe Application /c:3 /rd:true /f:text` |
 | Libraries that parse exported event log files | `Velocidex/evtx` `v0.2.0` (last commit 2021-10-19) and `0xrawsec/golang-evtx` `v1.2.9` (2021-09-26), both Go without cgo; `libyal/libevtx` (C, last commit 2026-11-07): its `README` says "Status: alpha" and "Licence: LGPL-3.0-or-later", and `synclibs.sh` fetches other libraries when it is built |
+| Wine has no Windows Event Log | Wine's source at `wine-11.22`, read not built: `dlls/wevtapi/main.c` is 165 lines of stubs (`EvtQuery` returns NULL; `EvtNext` and `EvtRender` set `ERROR_CALL_NOT_IMPLEMENTED`); `programs/wevtutil/main.c` logs "stub:"; `ReadEventLogW` in `dlls/advapi32/eventlog.c` is a stub |
+| The development machine cannot accelerate a guest | It is itself a KVM guest (`systemd-detect-virt` prints `kvm`); no `vmx` or `svm` processor flag; no `/dev/kvm`. QEMU 10.2.1 is installed; 8 processors, 23 GiB of memory, 197 GB of disk free |
+| How much slower an emulated guest is there | The same busybox SHA-256 over 300 MB, twice each on 2026-11-16: 1.06 to 1.32 s natively, 15.0 to 18.0 s inside a QEMU guest without acceleration (4 processors), so 11 to 17 times slower. A small Linux guest reached its first program about 6.7 s after QEMU started. One compute-bound workload; disk and Windows were not timed; background load was not controlled |
+| GitHub's hosted Windows runners | GitHub's documentation, read 2026-11-16: "Use of the standard GitHub-hosted runners is free and unlimited on public repositories"; Windows labels for x64 (`windows-latest`, `windows-2025`, `windows-2022`) and ARM64 (`windows-11-arm`); "Windows virtual machines are configured to run as administrators with User Account Control (UAC) disabled" |
+| Microsoft's evaluation copies of Windows | Microsoft's Evaluation Center, read 2026-11-16: Windows Server 2025 and 2022 as ISO and VHD, "expires in 180 days"; Windows 11 Enterprise as ISO, 90 days; "Register, then download and install". Windows Server 2025 needs no TPM or Secure Boot to install; it lists SSE4.2 and POPCNT among required processor features; "Beginning with Windows Server 2025, OpenSSH is now installed by default". What an evaluation copy may be used for was not stated on the pages read |
 | What the repository lacks as community documents | GitHub's community profile for the repository on 2026-11-15: 42 percent; code of conduct, contributing guide, issue template and pull-request template missing; licence, README and description present; no security policy |
-| Ollama serves an OpenAI-compatible chat endpoint that accepts tools | `ollama/ollama` `v0.40.16`: `server/routes.go:2436`, `openai/openai.go:111-124` |
+| Ollama serves an OpenAI-compatible chat endpoint that accepts tools, and can pass a request on to a cloud | `ollama/ollama` `v0.40.16`: `server/routes.go:2436` registers `/v1/chat/completions` wrapped in `cloudPassthroughMiddleware`; `openai/openai.go:111-124` has the `Tools` field |
 | sshd sample figures (A3) | LogHub `OpenSSH/OpenSSH_2k.log`, 2,000 lines, counted with the commands below |
 | The restart loop's lines | 23 journal lines from a throwaway systemd unit: `Started`, `Main process exited, code=exited, status=1/FAILURE`, `Failed with result 'exit-code'`, `Scheduled restart job, restart counter is at N` (N from 1 to 5), `Start request repeated too quickly`, `Failed to start` |
 | The journal's JSON export for the same kind of loop | 23 entries from `journalctl --user -u <unit> -o json` for a second throwaway unit: every value is a string; `__REALTIME_TIMESTAMP` is 16 digits, microseconds since 1970; `MESSAGE` holds the text; `USER_UNIT` names the unit; `N_RESTARTS` is present on the five restart entries; 45 different field names |
+| The journal's JSON export has values that are not strings | systemd `v262.2`, `docs/JOURNAL_EXPORT_FORMATS.md:146-153`: a field that is not printable or not UTF-8 "is serialized as a number array"; a field over a size threshold may be assigned null; a field with several values becomes an array. `man/systemd.journal-fields.xml`: `UNIT=` and `USER_UNIT=` are "Used by the system and user managers when logging about specific units"; `_SYSTEMD_UNIT=` is one of the fields the journal adds itself |
 | LogHub's terms | Its `LICENSE`: free for research or academic work, with a reference, a citation and the notice in every copy |
 | addlicense's options and header test | `google/addlicense` `v1.2.0`: `main.go:57-72`, `main.go:427-435`, `tmpl.go:43-46` |
 | The rule for years in section 7.2 behaves as that section says | The rule was written as a throwaway script and run on eleven inputs: nine ordinary and awkward ones (two files across New Year with file times and with `--as-of`, lines out of order at New Year's midnight, an `--as-of` on the day of the last record, a long quiet stretch, fourteen months of monthly records, a stamp ten hours after the anchor) all got the right years; the two cases the section says it cannot fix came out wrong in the direction it states |
@@ -922,7 +998,10 @@ reporting, so that no personal address has to be published.
 9. Settled by the owner, no longer my call: one generic client and no provider's own client in
    part 1 (sections 6.5 and 7.8). There is no default cloud model; the owner names one in
    configuration. Still my call: restrictions for an aggregator are configuration with a
-   documented example, not forced by the program.
+   documented example, not forced by the program. The second model disagreed twice: it would
+   have the program switch an aggregator's fallback off by default, for privacy and for cost. I
+   kept it as configuration because the owner chose a client that knows no provider; the program
+   says plainly when no restriction is set.
 10. No redaction in part 1; a configured model receives values from the log as they are.
 11. The model never types a figure. A statement that breaks the evidence rule is shown apart from
     the findings, marked as not verified, with its digits masked.
@@ -931,13 +1010,16 @@ reporting, so that no personal address has to be published.
 13. Quick checks run before a commit, `just check` before a push.
 14. Settled by the owner, no longer my call: the licence header is the text in `header.txt`
     (section 10).
-15. What "done" means (section 8): at least one cloud model must pass the checklists of A4, the
-    local model is measured and does not block, and Windows support is claimed only after the
-    tests have run on Windows. With no key for a cloud endpoint, the local model must pass instead.
+15. What "done" means (section 8): all of A1 to A11, the Windows ones included and none of them
+    skipped; at least one cloud model, named beforehand, must pass the checklists of A4; a run
+    with the local model must complete and obey the evidence rule, while its checklist result is
+    only measured; windows/arm64 is built but not run. With no key for a cloud endpoint, the
+    local model must pass instead.
 16. Each run makes a new database; nothing is reused between runs.
 17. Settled by the owner, no longer my call: the Event Log reader is in part 1, and it reads
-    through Windows' own API (sections 6.6 and 7.1). Still my call: the shape of its command
-    line.
+    through Windows' own API (sections 6.6 and 7.1). Still my calls: the shape of its command
+    line; that a live log is read for the most recent seven days unless told otherwise; and that
+    an event's readable message is shown but never mined.
 18. The expected store layout is a records table and a values table; the builder may change it if
     the tests hold.
 19. The user can run the eight query tools directly, with their own arguments.
@@ -946,6 +1028,10 @@ reporting, so that no personal address has to be published.
 22. The community documents (section 10): contributions accepted under the project's licence, the
     Contributor Covenant as the code of conduct, and GitHub's private vulnerability reporting for
     security reports.
+23. Settled by the owner, no longer my call: the Windows-bound work is done in a Windows virtual
+    machine on the development machine, with GitHub's hosted runners as the fallback and the
+    owner's own machine for a last check (section 8, A9). The second model recommended the hosted
+    runners as the first choice. Still open with the owner: which Windows image, and the time box.
 
 **Part 1 grew during review.** It was described to the owner as "the engine and the one-shot
 report, on text logs", with one command. Review added the things below. Each can be left out of
@@ -988,10 +1074,15 @@ part 1 without touching goals G1 to G7 or section 7.11; the owner may cut any of
 - Whether the evidence rule leaves too few findings standing with weaker models.
 - How well the instruction holds against hostile log text. A11 records it; it cannot be made
   certain.
-- Anything about behaviour on Windows, until a Windows machine runs the tests.
-- How the Event Log is read and what its events look like for the two examples, until the owner
-  chooses and real events come back from the Windows machine. Section 7.1 and the Windows cases of
-  A2 and A4 are unfinished until then.
+- Anything about behaviour on Windows, until a Windows system runs the tests.
+- Whether Windows is usable at all under emulation without acceleration on the development
+  machine. Only a compute probe has been timed; Windows itself has not been started there.
+- What the Event Log's events look like for the two examples, and the other points listed at the
+  end of the Event Log part of section 7.1, until real events have been captured on Windows.
+  The Windows cases of A2 and A4 are unfinished until then.
+- Whether the facts in an event's own values are enough for a model to say what the event means
+  when no readable message comes with it. The second model named moving this reader into part 1,
+  before any real event had been seen, as the revision most likely to be regretted.
 
 ## Stand-downs
 
@@ -1002,5 +1093,8 @@ Findings raised in review and set aside, with the reason. Added by the review pa
 - In the part of the report for statements that were not verified, masking digits also masks the
   digit inside a name such as a protocol's. Set aside: that part is headed as not verified and is
   not relied on (section 7.9).
+- A Windows event can name its values anything, and such names could clutter the summary. Set
+  aside: names that come from a log are stored as data and referred to by number, never used as
+  part of a query (section 7.4).
 
 End of the part 1 design, sections 1 to 14 and the stand-downs.

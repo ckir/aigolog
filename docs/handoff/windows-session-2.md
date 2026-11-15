@@ -1,3 +1,7 @@
+ON HOLD since 2026-11-16. The owner decided that this work is done first in a Windows virtual
+machine on the development machine. Do not follow this file unless the owner starts a session
+with it for a last check on a real machine.
+
 # Handoff 2: real Windows events for the Event Log reader
 
 This file replaces `docs/handoff/windows-session.md`, which a review found unsafe in places: it did
@@ -9,6 +13,12 @@ For: an agent session started on the owner's Windows machine, after fetching the
 
 Written: 2026-11-16, by an agent session on the owner's Linux machine, in the commit that adds
 this file on top of `e011e6e`.
+
+Revised later on 2026-11-16, after a review of this file. What changed: the masking check no
+longer puts real values in the report (sections 1 and 3); record numbers are kept distinct
+(section 3); item 3 counts only what was captured; items 5 and 6 give commands. Follow the file
+as it is at the commit named in the message that started your session. If you began from an
+earlier copy, stop, fetch again, and re-read sections 1, 3 and 6 before going on.
 
 Why that session could not do this itself (measured there): the machine runs
 `Linux 7.0.0-43-generic x86_64`; it has no `wevtutil`, no Wine and no virtual machine support, and
@@ -37,8 +47,9 @@ differ.
 - Work on a branch. Never commit to `main` or to `design/part-1-engine-and-report`. Do not merge.
 - Commit and push only what this file asks for, and only after the owner has seen it (section 8).
   No release, no tag, no deployment.
-- Measure, do not assume. Every statement in the report has next to it the exact command that
-  was run and its output, masked. "None found" and "could not" are correct, welcome results.
+- Measure, do not assume. Every statement in the report has next to it the command that was run
+  and its output, both masked: a real value inside a command is replaced too (section 3). "None
+  found" and "could not" are correct, welcome results.
 - Do not edit the design document or any other existing file.
 
 ## 2. Where captures go
@@ -64,7 +75,8 @@ order of elements exactly as Windows produced them.
 | IPv6 addresses, including those that wrap an IPv4 address | `2001:db8::1`, `2001:db8::2`, ... |
 | Port numbers | `0` |
 | Workstation names | `WS1`, `WS2`, ... |
-| Logon identifiers, process and thread identifiers, record numbers, activity and correlation identifiers | a value of the same shape: `0x0`, `0`, or an all-zero GUID |
+| Record numbers of events | `1`, `2`, `3`, ... in the events' original order. Two different events keep two different numbers, and the same event keeps the same number wherever it appears. The design uses this number to tell events apart |
+| Logon identifiers, process and thread identifiers, activity and correlation identifiers | a value of the same shape: `0x0`, `0`, or an all-zero GUID |
 | Every time stamp | another valid time in exactly the same format, starting at `2026-01-01T00:00:00` and keeping the events in their original order. Always replace; never leave a real time |
 | The content of any `Binary` element, and any other long run of hexadecimal digits | zeros of the same length. Such data can spell out a name |
 | Names of services and programs that are not part of Windows | `service1`, `service2`, ... (**ask the owner first** if you would rather keep them) |
@@ -78,9 +90,14 @@ If you are not sure whether a value identifies someone or something, mask it and
 **The check.** Before any file is copied into the repository, and again before the owner is
 shown the files, search every masked file for each real value you replaced: the real computer
 name, every real user name, the real domain, the first parts of the machine's own security
-identifier, and every real address. Put the search commands and their results in the report, with
-the real values themselves left out of the report. Each search must find nothing. If one finds
-something, fix the file and search again.
+identifier, and every real address. Each search must find nothing. If one finds something, fix
+the file and search again.
+
+In the report, say for each kind of value that the search found nothing. **Never write a real
+value into the report.** That includes the commands: a command that contained a real value is
+written with the value replaced by a description in angle brackets, for example
+`<the real computer name>`. The same holds for commit messages, branch names and the pull
+request.
 
 ## 4. Already done - do not redo
 
@@ -166,7 +183,7 @@ wevtutil qe Security /c:5 /rd:true /f:xml /q:"*[System[(EventID=4625)]]"
 
 Write back:
 
-- how many such events the log holds (a number only)
+- how many such events you captured (do not count the whole log; that can take very long)
 - each captured event as its own file, masked
 - whether every data element of the event carries a name, with the list of names
 
@@ -214,16 +231,27 @@ purpose is **ask the owner first**.
 ### Item 5 - an event whose values are not named
 
 Goal: one event in which at least one data element has no name. Events from older programs,
-often in the Application log, are the likely place. Read some recent events from the Application
-log as XML and pick the first that has an unnamed data element. Write it back as a file, masked,
-with the command you used. If you find none in 500 events, report "none found".
+often in the Application log, are the likely place. Read the 200 most recent events of the
+Application log as XML into a file in the outside folder (the documented form:
+`wevtutil qe Application /c:200 /rd:true /f:xml`), and pick the first event in it that has a data
+element with no name. Write it back as a file, masked, with the command you used. If there is none
+among those 200, report "none found".
 
 ### Item 6 - the readable message
 
-Goal: learn whether an event's readable message comes with it. For one event already captured,
-get it once as text and once as XML (the documented example form
-`wevtutil qe <Path> /c:1 /rd:true /f:text`, and the same with `/f:xml`), and report whether the
-sentence that the text form shows appears anywhere in the XML form.
+Goal: learn whether an event's readable message comes with it. Take one event already captured
+and get that same event once as text and once as XML, then report whether the sentence that the
+text form shows appears anywhere in the XML form.
+
+The newest event in a log can change between two commands, so do not ask for "the newest" twice.
+Select the event by its own record number, which its XML shows. Suggested form (query not
+verified), run once with `/f:text` and once with `/f:xml`:
+
+```
+wevtutil qe <Path> /f:text /q:"*[System[(EventRecordID=<number>)]]"
+```
+
+In the report, write the record number as `<record number>`.
 
 Also look for one event for which Windows has NO readable message: its text form says that the
 description for the event cannot be found. If you meet one among the events you have already read,
