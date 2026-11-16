@@ -8,6 +8,7 @@ package timeparse
 
 import (
 	"math"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -102,6 +103,32 @@ func TestParseDoesNotScanAHugeLine(t *testing.T) {
 	}
 	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("200 parses of a 4 MiB line took %v: the stamp must be looked for in the first bytes only", d)
+	}
+}
+
+func TestParseOnAHugeLineWithAValidStampCopiesOnlyTheWindow(t *testing.T) {
+	const stamp = "2026-01-05 10:00:01"
+	line := stamp + strings.Repeat("x", 8<<20)
+	l := layoutNamed(t, "iso-space")
+	want := wall(2026, 1, 5, 10, 0, 1)
+	const calls = 20
+
+	// A stamp that is followed by junk makes time.Parse report an error that
+	// quotes the text it was given, so the bytes allocated per call show how
+	// much of the line was handed to it.
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	for i := 0; i < calls; i++ {
+		got, ok := l.Parse(line)
+		if !ok || got.Nanos != want {
+			t.Fatalf("Parse(stamp + 8 MiB of x) = %+v, %v; want nanos %d, true", got, ok, want)
+		}
+	}
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	if perCall := (after.TotalAlloc - before.TotalAlloc) / calls; perCall > 64<<10 {
+		t.Errorf("Parse allocated %d bytes per call on an 8 MiB line, want under 64 KiB: only the first bytes may be handed to time.Parse", perCall)
 	}
 }
 

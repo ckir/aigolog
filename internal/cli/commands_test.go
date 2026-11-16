@@ -622,3 +622,78 @@ func TestAnalyzeWarnsOnceAboutKeptDatabasesItCannotRead(t *testing.T) {
 		t.Errorf("the unreadable database was removed: %v", err)
 	}
 }
+
+// skipUnlessAFolderCanBeReadOnly skips the test where chmod cannot make a
+// folder that nothing can be removed from or made in: on Windows, and for root.
+func skipUnlessAFolderCanBeReadOnly(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("a folder is made read-only with chmod on Unix only")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root is not stopped by the permissions of a folder")
+	}
+}
+
+// readOnlyCache makes the cache folder of h one that nothing can be removed
+// from or made in, and gives it back its permissions when the test ends.
+func readOnlyCache(t *testing.T, h *harness) {
+	t.Helper()
+	if err := os.Chmod(h.cache, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	// This runs before the removal of the temporary folder, which needs it.
+	t.Cleanup(func() { os.Chmod(h.cache, 0o700) })
+}
+
+func TestCleanWithErrorsStillPrintsItsLineAndExitsWithOne(t *testing.T) {
+	skipUnlessAFolderCanBeReadOnly(t)
+	h := newHarness(t)
+	if code, _, errOut := h.run("analyze", h.file("a.log", "x\n")); code != exitcode.OK {
+		t.Fatalf("analyze: code %d, stderr %q", code, errOut)
+	}
+	readOnlyCache(t, h)
+	code, out, errOut := h.run("clean")
+	if code != exitcode.Failure {
+		t.Errorf("code = %d, want %d (Failure): a database could not be removed", code, exitcode.Failure)
+	}
+	if want := "removed 0 databases, 0 bytes; running 0\n"; out != want {
+		t.Errorf("stdout = %q, want %q", out, want)
+	}
+	if !strings.Contains(errOut, "aigolog: ") || !strings.Contains(errOut, "permission denied") {
+		t.Errorf("stderr = %q, want an aigolog: line that says permission denied", errOut)
+	}
+	if got := dbCount(t, h.cache); got != 1 {
+		t.Errorf("databases left = %d, want the 1 that could not be removed", got)
+	}
+}
+
+func TestSweepErrorsDuringAnalyzeArePrintedAsWarnings(t *testing.T) {
+	skipUnlessAFolderCanBeReadOnly(t)
+	h := newHarness(t)
+	present := h.now
+	h.now = present.Add(-8 * 24 * time.Hour) // older than the 7 days that are kept
+	p := h.file("a.log", "x\n")
+	if code, _, errOut := h.run("analyze", p); code != exitcode.OK {
+		t.Fatalf("first analyze: code %d, stderr %q", code, errOut)
+	}
+	h.now = present
+	readOnlyCache(t, h)
+	code, out, errOut := h.run("analyze", p)
+	warning := ""
+	for _, line := range strings.Split(errOut, "\n") {
+		if strings.HasPrefix(line, "aigolog: warning: ") {
+			warning = line
+		}
+	}
+	if !strings.Contains(warning, "removing the database ") || !strings.Contains(warning, "permission denied") {
+		t.Errorf("stderr = %q, want an %q line that says permission denied for the database that could not be removed", errOut, "aigolog: warning: removing the database ...")
+	}
+	// The folder takes no new file, so the run fails where it makes its database.
+	if code != exitcode.StorageUnavailable {
+		t.Errorf("code = %d, want %d (StorageUnavailable); stdout %q, stderr %q", code, exitcode.StorageUnavailable, out, errOut)
+	}
+	if got := dbCount(t, h.cache); got != 1 {
+		t.Errorf("databases = %d, want only the old one that could not be removed", got)
+	}
+}

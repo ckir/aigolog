@@ -13,7 +13,9 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/ckir/aigolog/internal/record"
 )
@@ -420,6 +422,113 @@ func TestACutThatLandsOnAnEmptyLineDoesNotLetALongLineJoinIt(t *testing.T) {
 	for _, rec := range recs {
 		if strings.Contains(rec.Raw, strings.Repeat("b", 298)) && rec.Raw != "  "+strings.Repeat("b", 298) {
 			t.Errorf("the long line was joined to something: %q", rec.Raw)
+		}
+	}
+}
+
+func TestUTF16PositionsOfSeveralLines(t *testing.T) {
+	// The decoded text, with the byte-order mark not counted:
+	//   "héllo\n"        7 bytes (é is two), at 0; 6 without the newline
+	//   "wörld 😀\r\n"   13 bytes (ö two, the emoji four), at 7; 11 without CR LF
+	//   "last€"          7 bytes (€ is three), at 20
+	const text = "héllo\nwörld 😀\r\nlast€"
+	want := []record.Record{
+		{Line: 1, Offset: 0, Length: 6, Raw: "héllo"},
+		{Line: 2, Offset: 7, Length: 11, Raw: "wörld 😀"},
+		{Line: 3, Offset: 20, Length: 7, Raw: "last€"},
+	}
+	for name, in := range map[string][]byte{"utf-16le": utf16le(text), "utf-16be": utf16be(text)} {
+		r, recs := readAll(t, in)
+		if len(recs) != len(want) {
+			t.Errorf("%s: got %d records, want %d: %+v", name, len(recs), len(want), recs)
+			continue
+		}
+		for i := range want {
+			if recs[i] != want[i] {
+				t.Errorf("%s: record %d = %+v, want %+v", name, i+1, recs[i], want[i])
+			}
+		}
+		if r.Bytes() != int64(len(in)) {
+			t.Errorf("%s: Bytes() = %d, want the original %d", name, r.Bytes(), len(in))
+		}
+		if r.Lines() != 3 {
+			t.Errorf("%s: Lines() = %d, want 3", name, r.Lines())
+		}
+	}
+}
+
+func TestADecodedNulInUTF16IsRefusedWithItsDecodedOffset(t *testing.T) {
+	// "ab\n" is 3 decoded bytes, "cd\n" 3 more, "ef" 2: the NUL is at 8.
+	const text = "ab\ncd\nef\x00gh\nafter\n"
+	for name, in := range map[string][]byte{"utf-16le": utf16le(text), "utf-16be": utf16be(text)} {
+		r, err := New(bytes.NewReader(in))
+		if err != nil {
+			t.Errorf("%s: New refused the input, but a NUL is only looked for in the lines of UTF-16: %v", name, err)
+			continue
+		}
+		var got []string
+		var last error
+		for last == nil {
+			var rec record.Record
+			if rec, last = r.Next(); last == nil {
+				got = append(got, rec.Raw)
+			}
+		}
+		if want := []string{"ab", "cd"}; !sameStrings(got, want) {
+			t.Errorf("%s: records before the NUL = %q, want %q (last error %v)", name, got, want, last)
+		}
+		var nt *NotTextError
+		if !errors.As(last, &nt) {
+			t.Errorf("%s: Next ended with %v, want a *NotTextError", name, last)
+			continue
+		}
+		if nt.Offset != 8 {
+			t.Errorf("%s: NotTextError.Offset = %d, want the decoded offset 8", name, nt.Offset)
+		}
+	}
+}
+
+func TestASurrogatePairSplitAcrossTheDecodersChunkIsKept(t *testing.T) {
+	readers := map[string]func([]byte) io.Reader{
+		"bytes.Reader":  func(b []byte) io.Reader { return bytes.NewReader(b) },
+		"one-byte read": func(b []byte) io.Reader { return iotest.OneByteReader(bytes.NewReader(b)) },
+	}
+	// The decoder takes chunkSize bytes, chunkSize/2 code units, from its
+	// source at a time (after the mark). With chunkSize/2-1 units before it,
+	// the high surrogate of the emoji is the last unit of the first chunk and
+	// the low one is the first unit of the second.
+	for _, pad := range []int{chunkSize/2 - 2, chunkSize/2 - 1, chunkSize / 2} {
+		line := strings.Repeat("a", pad) + "😀"
+		text := line + "\ntail\n"
+		for _, enc := range []struct {
+			name string
+			in   []byte
+		}{{"utf-16le", utf16le(text)}, {"utf-16be", utf16be(text)}} {
+			for rname, mk := range readers {
+				name := fmt.Sprintf("%s pad %d %s", enc.name, pad, rname)
+				r, err := New(mk(enc.in))
+				if err != nil {
+					t.Errorf("%s: New: %v", name, err)
+					continue
+				}
+				recs := drain(t, r)
+				if len(recs) != 2 {
+					t.Errorf("%s: got %d records, want 2", name, len(recs))
+					continue
+				}
+				if recs[0].Raw != line || strings.ContainsRune(recs[0].Raw, utf8.RuneError) {
+					t.Errorf("%s: the first record does not end in the whole emoji (%d bytes, tail %q)", name, len(recs[0].Raw), recs[0].Raw[len(recs[0].Raw)-8:])
+				}
+				if recs[0].Offset != 0 || recs[0].Length != int64(pad+4) {
+					t.Errorf("%s: first record at %d, length %d; want 0 and %d", name, recs[0].Offset, recs[0].Length, pad+4)
+				}
+				if recs[1].Raw != "tail" || recs[1].Line != 2 || recs[1].Offset != int64(pad+5) {
+					t.Errorf("%s: second record = %+v, want tail at line 2 offset %d", name, recs[1], pad+5)
+				}
+				if r.Bytes() != int64(len(enc.in)) {
+					t.Errorf("%s: Bytes() = %d, want %d", name, r.Bytes(), len(enc.in))
+				}
+			}
 		}
 	}
 }

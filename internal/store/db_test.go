@@ -494,3 +494,48 @@ func TestCreateNamesTheFolderNotAPlaceholderPath(t *testing.T) {
 		t.Errorf("err = %v; want it to name the folder file:x and no placeholder file name", err)
 	}
 }
+
+func TestOpenChecksTheVersionBeforeTheCompleteMark(t *testing.T) {
+	d := newDB(t) // never marked complete
+	path := d.Path()
+	d.Close()
+	old := buildinfo.Version
+	buildinfo.Version = "9.9.9-other"
+	t.Cleanup(func() { buildinfo.Version = old })
+	_, err := Open(ctx, path)
+	var ve *VersionError
+	if !errors.As(err, &ve) || errors.Is(err, ErrIncomplete) {
+		t.Errorf("Open of an unfinished database of another version: %v, want a *VersionError and not ErrIncomplete", err)
+	}
+}
+
+func TestCreateWritesTheMetaRows(t *testing.T) {
+	d := newDB(t) // the clock is 2026-01-16 10:15:00 UTC
+	want := map[string]string{
+		"version":  buildinfo.Version,
+		"schema":   "1",
+		"created":  "2026-01-16T10:15:00Z",
+		"complete": "0",
+	}
+	check := func(stage string, want map[string]string) {
+		t.Helper()
+		got, err := d.readMeta(ctx)
+		if err != nil {
+			t.Fatalf("%s: readMeta: %v", stage, err)
+		}
+		if len(got) != len(want) {
+			t.Errorf("%s: meta = %v, want %v", stage, got, want)
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("%s: meta[%q] = %q, want %q", stage, k, got[k], v)
+			}
+		}
+	}
+	check("after Create", want)
+	if err := d.MarkComplete(ctx); err != nil {
+		t.Fatal(err)
+	}
+	want["complete"] = "1"
+	check("after MarkComplete", want)
+}

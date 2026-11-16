@@ -9,11 +9,14 @@ package ingest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -322,4 +325,160 @@ func TestMemoryStaysBoundedWhenRecordsAreAsLongAsTheCap(t *testing.T) {
 		t.Errorf("the heap grew by %d MiB during the run (%d samples)", l.peak>>20, l.samples)
 	}
 	t.Logf("peak growth %d bytes over %d samples", l.peak, l.samples)
+}
+
+// storedRaws returns the Raw text of the records of the source, in order.
+func storedRaws(t *testing.T, d *store.DB, source int) []string {
+	t.Helper()
+	var raws []string
+	err := d.Records(ctx, source, func(id int64, r record.Record) error {
+		raws = append(raws, r.Raw)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("reading the records back: %v", err)
+	}
+	return raws
+}
+
+// hookedLines is an input of n lines of the same width, each handed out by
+// itself, that calls hook(i) when line i (from 1) is asked for.
+type hookedLines struct {
+	n, i  int
+	width int
+	buf   []byte
+	hook  func(i int)
+}
+
+func (h *hookedLines) Read(p []byte) (int, error) {
+	if len(h.buf) == 0 {
+		if h.i >= h.n {
+			return 0, io.EOF
+		}
+		h.i++
+		if h.hook != nil {
+			h.hook(h.i)
+		}
+		h.buf = []byte(fmt.Sprintf("line %02d ", h.i) + strings.Repeat("y", h.width) + "\n")
+	}
+	n := copy(p, h.buf)
+	h.buf = h.buf[n:]
+	return n, nil
+}
+
+func TestACancelledContextBetweenBatchesStopsTheRunAndDoesNotMarkItComplete(t *testing.T) {
+	d := newDB(t)
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	// The text reader looks at the first 64 KiB before it gives out a record,
+	// and then reads ahead only as it needs to, so with lines of 20,000 bytes
+	// the seventh line is asked for while the run is in the middle of
+	// appending batches of two records.
+	r := &hookedLines{n: 10, width: 20000, hook: func(i int) {
+		if i == 7 {
+			cancel()
+		}
+	}}
+	res, err := Run(cctx, d, []Input{{Name: "big.log", R: r}}, Options{BatchSize: 2, Now: time.Now(), Zone: time.UTC})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	// The error of the context is returned as it is (see Run), not wrapped by
+	// the store when it finds the context done.
+	if err != context.Canceled {
+		t.Errorf("err = %q, want the error of the context itself: the batch must not be appended once the context is done", err)
+	}
+	if res.Records != 0 {
+		t.Errorf("Result.Records = %d: no source was finished", res.Records)
+	}
+	stored := storedRaws(t, d, 1)
+	t.Logf("%d records stored", len(stored))
+	if len(stored) < 2 || len(stored) >= 10 {
+		t.Errorf("%d records are stored, want the first batch or more and fewer than 10", len(stored))
+	}
+	path := d.Path()
+	d.Close()
+	if _, err := store.Open(ctx, path); !errors.Is(err, store.ErrIncomplete) {
+		t.Errorf("Open of the database of a cancelled run: %v, want store.ErrIncomplete", err)
+	}
+}
+
+func TestBatchBoundaries(t *testing.T) {
+	for _, n := range []int{3, 4, 6} {
+		t.Run(fmt.Sprintf("%d lines", n), func(t *testing.T) {
+			d := newDB(t)
+			var want []string
+			var body strings.Builder
+			for i := 1; i <= n; i++ {
+				line := fmt.Sprintf("line %d", i)
+				want = append(want, line)
+				body.WriteString(line + "\n")
+			}
+			res, err := Run(ctx, d, []Input{in("b.log", body.String())}, Options{BatchSize: 3, Now: time.Now(), Zone: time.UTC})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Records != int64(n) || res.Sources[0].Totals.Records != int64(n) {
+				t.Errorf("Result.Records = %d, source records = %d; want %d", res.Records, res.Sources[0].Totals.Records, n)
+			}
+			got := storedRaws(t, d, 1)
+			if strings.Join(got, "|") != strings.Join(want, "|") {
+				t.Errorf("stored %q, want %q", got, want)
+			}
+			// Nothing may be stored that belongs to no source, as a batch
+			// that was not emptied after its append would store again.
+			if stray := storedRaws(t, d, 0); len(stray) != 0 {
+				t.Errorf("%d records belong to no source: %q", len(stray), stray)
+			}
+		})
+	}
+}
+
+func TestOpenFileOnADirectoryAndOnANonRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Run("directory", func(t *testing.T) {
+		input, closer, err := OpenFile(dir)
+		if err == nil || !errors.Is(err, syscall.EISDIR) || !strings.Contains(err.Error(), "is a directory") {
+			t.Errorf("OpenFile(a directory) = %+v, err %v; want an error that says it is a directory", input, err)
+		}
+		if closer != nil {
+			closer.Close()
+			t.Error("OpenFile(a directory) returned a closer: nothing should be left open")
+		}
+	})
+	t.Run("named pipe", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("there is no named pipe made with mkfifo on Windows")
+		}
+		mkfifo, err := exec.LookPath("mkfifo")
+		if err != nil {
+			t.Skip("no mkfifo on this system")
+		}
+		fifo := filepath.Join(dir, "pipe")
+		if out, err := exec.Command(mkfifo, fifo).CombinedOutput(); err != nil {
+			t.Skipf("mkfifo: %v: %s", err, out)
+		}
+		// Opening a named pipe for reading waits for a writer, so a goroutine
+		// opens it for writing, which waits for the reader.
+		go func() {
+			w, err := os.OpenFile(fifo, os.O_WRONLY, 0)
+			if err != nil {
+				return
+			}
+			w.WriteString("x\n")
+			w.Close()
+		}()
+		input, closer, err := OpenFile(fifo)
+		if err != nil {
+			t.Fatalf("OpenFile(a named pipe): %v", err)
+		}
+		defer closer.Close()
+		if !input.ModTime.IsZero() {
+			t.Errorf("ModTime = %v, want zero for something that is not a regular file", input.ModTime)
+		}
+		got, err := io.ReadAll(input.R)
+		if err != nil || string(got) != "x\n" || input.Name != fifo {
+			t.Errorf("read %q, %v, name %q; want %q: a pipe has no size to limit it by", got, err, input.Name, "x\n")
+		}
+	})
 }

@@ -103,6 +103,31 @@ func TestTwentyNinthOfFebruaryGoesToTheLeapYearBefore(t *testing.T) {
 	}
 }
 
+func TestAStampExactlyAtTheLimitStaysInItsYearAndOneNanosecondLaterGoesBack(t *testing.T) {
+	anchor := mustAsOf(t, "2026-01-05 10:00:00") // the limit is 2026-01-06 10:00:00
+	at, ok := NewYearResolver(anchor).Resolve(1, 6, int64(10*time.Hour))
+	if got := time.Unix(0, at).UTC().Format("2006-01-02 15:04:05"); !ok || got != "2026-01-06 10:00:00" {
+		t.Errorf("a stamp at the limit = %q, %v; want 2026-01-06 10:00:00, true", got, ok)
+	}
+	later, ok := NewYearResolver(anchor).Resolve(1, 6, int64(10*time.Hour)+1)
+	if got := time.Unix(0, later).UTC().Format("2006-01-02 15:04:05"); !ok || got != "2025-01-06 10:00:00" || later != wall(2025, 1, 6, 10, 0, 0)+1 {
+		t.Errorf("a stamp one nanosecond past the limit = %q (%d), %v; want 2025-01-06 10:00:00 plus 1ns, true", got, later, ok)
+	}
+}
+
+func TestTwentyNinthOfFebruaryFindsALeapYearAcrossTheCenturyGap(t *testing.T) {
+	// 2100 is not a leap year, so the nearest one before 2103 is 2096, seven
+	// years back.
+	n, ok := NewYearResolver(mustAsOf(t, "2103-03-05")).Resolve(2, 29, int64(10*time.Hour))
+	if got := time.Unix(0, n).UTC().Format("2006-01-02 15:04:05"); !ok || got != "2096-02-29 10:00:00" {
+		t.Errorf("29 February from 2103 = %q, %v; want 2096-02-29 10:00:00, true", got, ok)
+	}
+	n, ok = NewYearResolver(mustAsOf(t, "2100-06-01")).Resolve(2, 29, 0)
+	if got := time.Unix(0, n).UTC().Format("2006-01-02 15:04:05"); !ok || got != "2096-02-29 00:00:00" {
+		t.Errorf("29 February from 2100 = %q, %v; want 2096-02-29 00:00:00, true", got, ok)
+	}
+}
+
 func mustAsOf(t *testing.T, s string) int64 {
 	t.Helper()
 	n, err := ParseAsOf(s)
