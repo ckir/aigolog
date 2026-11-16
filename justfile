@@ -1,0 +1,55 @@
+# Commands for working on aigolog. `just check` is the gate.
+# Recipes are plain command lines, so that they run under sh on Linux and on Windows.
+
+version := "0.1.0-dev"
+ldflags := "-X github.com/ckir/aigolog/internal/buildinfo.Version=" + version
+license_args := "-f header.txt -ignore 'testdata/**' -ignore 'docs/**' -ignore 'ideas/**' -ignore 'marketing/**' -ignore 'dist/**'"
+
+# List the recipes.
+default:
+    @just --list
+
+# Rewrite the Go files in the standard format.
+fmt:
+    gofmt -w cmd internal
+
+# Fail if a Go file is not in the standard format.
+fmt-check:
+    @test -z "$(gofmt -l cmd internal)" || { echo "not formatted (run: just fmt):"; gofmt -l cmd internal; exit 1; }
+
+# Vet the code for this machine.
+vet:
+    go vet ./...
+
+# Vet the code for all four targets, so that code which compiles only here is caught.
+vet-cross:
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go vet ./...
+    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go vet ./...
+    CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go vet ./...
+    CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go vet ./...
+
+# Add the licence header to source files that lack one.
+license:
+    addlicense {{license_args}} .
+
+# Fail if a source file lacks a licence header.
+license-check:
+    addlicense -check {{license_args}} .
+
+# Run the tests that need neither a network nor a model.
+test:
+    go test ./...
+
+# The gate.
+check: fmt-check vet vet-cross license-check test
+
+# Build the program for the four targets into dist/.
+build:
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "{{ldflags}}" -o dist/aigolog-linux-amd64 ./cmd/aigolog
+    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "{{ldflags}}" -o dist/aigolog-linux-arm64 ./cmd/aigolog
+    CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "{{ldflags}}" -o dist/aigolog-windows-amd64.exe ./cmd/aigolog
+    CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "{{ldflags}}" -o dist/aigolog-windows-arm64.exe ./cmd/aigolog
+
+# Remove what build made.
+clean:
+    rm -rf dist
