@@ -964,6 +964,10 @@ Commit it (`git add docs/acceptance/a1-builds.md && git commit -m "Record accept
 
 ---
 
+## Changes made after the tasks were done
+
+- 2026-11-16: the owner's commit `5cac83c` made `header.txt` the full licence text (156 lines), and the gate failed on all three machines because the header test compared every Go file with the whole file. The owner chose to keep `header.txt` and give the files the short header from a new file, `source-header.txt` (the five lines of Global Constraints). `justfile` (`license_args`) and `internal/repocheck/header_test.go` read `source-header.txt` where this plan says `header.txt`.
+
 ## When every task is done
 
 1. `just check` passes here and the three jobs are green on the last commit.

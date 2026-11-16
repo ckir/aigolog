@@ -1139,15 +1139,15 @@ v1.2.0).
   with its own `sh`.
 - **addlicense.** Every source file carries a header naming the copyright holder and the licence.
   PolyForm Noncommercial is not one of addlicense's built-in licences (`-l` takes apache, bsd, mit
-  or mpl), so the header comes from `header.txt` at the root of the repository, which the owner
-  supplied, passed with `-f`. A recipe runs it
+  or mpl), so the header comes from `source-header.txt` at the root of the repository (the owner's text;
+  `header.txt` holds the full licence text and is not the per-file header), passed with `-f`. A recipe runs it
   with `-check`, ignoring test data. Know its limit: `-check` passes any file whose first 1,000
   bytes contain the word "copyright", so it proves a header is present, not that it is the right
   one.
 - The project's `.claude/recommended-tools.json` declares the three tools, Ollama for the local
   model tests, and the source repositories and tags from section 9.
 
-The header text is the owner's, in `header.txt`:
+The header text is the owner's, in `source-header.txt`:
 
 ```
 Copyright (c) 2026 Costas Kirgoussios
@@ -1210,8 +1210,9 @@ reporting, so that no personal address has to be published.
 12. LogHub's logs are fetched at test time and never committed, because its terms speak of research
     and academic use.
 13. Quick checks run before a commit, `just check` before a push.
-14. Settled by the owner, no longer my call: the licence header is the text in `header.txt`
-    (section 10).
+14. Settled by the owner, no longer my call: the licence header is the text in `source-header.txt`
+    (section 10; `header.txt` was first the 5-line header and now holds the full licence text, so the
+    short header moved to its own file on 2026-11-16).
 15. What "done" means (section 8): all of A1 to A11, the Windows ones included and none of them
     skipped; at least one cloud model, named beforehand, must pass the checklists of A4; a run
     with the local model must complete and obey the evidence rule, while its checklist result is

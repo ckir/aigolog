@@ -3,7 +3,7 @@
 
 version := "0.1.0-dev"
 ldflags := "-X github.com/ckir/aigolog/internal/buildinfo.Version=" + version
-license_args := "-f header.txt -ignore 'testdata/**' -ignore 'docs/**' -ignore 'ideas/**' -ignore 'marketing/**' -ignore 'dist/**'"
+license_args := "-f source-header.txt -ignore 'testdata/**' -ignore 'docs/**' -ignore 'ideas/**' -ignore 'marketing/**' -ignore 'dist/**'"
 
 # List the recipes.
 default:

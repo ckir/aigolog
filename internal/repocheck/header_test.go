@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// headerAsGoComment turns the text of header.txt into the comment block
+// headerAsGoComment turns the text of source-header.txt into the comment block
 // addlicense writes: "// " before each line, nothing after an empty one.
 func headerAsGoComment(header string) string {
 	var b strings.Builder
@@ -66,7 +66,7 @@ func TestHeaderCheckAcceptsTheRightHeaderOnly(t *testing.T) {
 
 func TestEveryGoFileStartsWithTheLicenceHeader(t *testing.T) {
 	root := repoRoot(t)
-	raw, err := os.ReadFile(filepath.Join(root, "header.txt"))
+	raw, err := os.ReadFile(filepath.Join(root, "source-header.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestEveryGoFileStartsWithTheLicenceHeader(t *testing.T) {
 			checked++
 			if !startsWithHeader(string(b), want) {
 				rel, _ := filepath.Rel(root, path)
-				t.Errorf("%s does not start with the header in header.txt", filepath.ToSlash(rel))
+				t.Errorf("%s does not start with the header in source-header.txt", filepath.ToSlash(rel))
 			}
 			return nil
 		})
