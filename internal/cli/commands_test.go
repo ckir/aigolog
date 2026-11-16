@@ -9,6 +9,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/ckir/aigolog/internal/buildinfo"
 	"github.com/ckir/aigolog/internal/exitcode"
+	"github.com/ckir/aigolog/internal/reader/text"
 	"github.com/ckir/aigolog/internal/store"
 )
 
@@ -502,5 +504,49 @@ func TestAFileThatCannotBeReadIsNamedOnce(t *testing.T) {
 	code, _, errOut = h.run("analyze", dir)
 	if want := "aigolog: cannot read " + dir + ": is a directory\n"; code != exitcode.Failure || errOut != want {
 		t.Errorf("directory: code %d, stderr %q, want %q", code, errOut, want)
+	}
+}
+
+func TestTheSummaryNotesRecordsCutAtOneMiBAndOnlyThen(t *testing.T) {
+	line := "  " + strings.Repeat("z", 97) + "\n" // 100 bytes
+	body := "2026-01-05 10:00:01 start\n" + strings.Repeat(line, 1536<<10/len(line))
+
+	// The reader is the oracle for how many records were cut.
+	rd, err := text.New(strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := rd.Next(); err != nil {
+			break
+		}
+	}
+	want := rd.Cut()
+	if want < 1 {
+		t.Fatalf("the reader cut %d records of 1.5 MiB", want)
+	}
+
+	h := newHarness(t)
+	code, out, errOut := h.run("analyze", h.file("big.log", body))
+	if code != exitcode.OK || errOut != "" {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	note := fmt.Sprintf("  note: %d joined records were cut at 1 MiB of text; the lines after each cut start new records", want)
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	at := -1
+	for i, l := range lines {
+		if l == note {
+			at = i
+		}
+	}
+	// The note ends the block of its source: the database line follows.
+	if at < 0 || !strings.HasPrefix(lines[at-1], "  time: ") || !strings.HasPrefix(lines[at+1], "database: ") {
+		t.Errorf("the note %q is not in place in:\n%s", note, out)
+	}
+
+	h = newHarness(t)
+	_, out, _ = h.run("analyze", h.file("small.log", "2026-01-05 10:00:01 a\n  b\n"))
+	if strings.Contains(out, "note:") {
+		t.Errorf("a normal file has a note:\n%s", out)
 	}
 }

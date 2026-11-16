@@ -369,6 +369,9 @@ func printSummary(w io.Writer, res ingest.Result, path string, size int64, kept 
 			}
 			fmt.Fprintf(w, "  years: worked out from the anchor %s, %s\n", summaryTime(s.Source.AnchorNanos), kind)
 		}
+		if s.CutRecords > 0 {
+			fmt.Fprintf(w, "  note: %d joined records were cut at 1 MiB of text; the lines after each cut start new records\n", s.CutRecords)
+		}
 	}
 	if kept {
 		fmt.Fprintf(w, "database: %s (%d bytes), kept %d days\n", textsafe.Clean(path), size, keepDays)
