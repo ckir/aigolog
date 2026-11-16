@@ -33,6 +33,7 @@ $script:AdminUser = 'aigoadmin'
 $script:AdminPw = $null
 $script:AdminReady = $false
 $script:AdminLocal = $null
+$script:ProviderCache = @{}
 $script:LogonAuditGuid = '{0CCE9215-69AE-11D9-BED3-505054503030}'
 
 Add-Type -AssemblyName System.Core
@@ -68,6 +69,32 @@ public static class ProbeNative
         int length;
         if (GetTokenInformation(token, 18, out value, 4, out length)) { return value; }
         return -Marshal.GetLastWin32Error();
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern IntPtr LoadLibraryExW(string file, IntPtr reserved, uint flags);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool FreeLibrary(IntPtr module);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern int FormatMessageW(uint flags, IntPtr source, uint messageId, uint languageId, System.Text.StringBuilder buffer, int size, IntPtr arguments);
+
+    // The text of one message in a message file, with its %1, %2 ... left as they are.
+    // The file is opened as data only; nothing in it runs. Returns null and sets error on failure.
+    public static string MessageFromFile(string file, uint messageId, out int error)
+    {
+        error = 0;
+        IntPtr module = LoadLibraryExW(file, IntPtr.Zero, 0x00000002 | 0x00000020);
+        if (module == IntPtr.Zero) { error = Marshal.GetLastWin32Error(); return null; }
+        try
+        {
+            System.Text.StringBuilder buffer = new System.Text.StringBuilder(32768);
+            int n = FormatMessageW(0x00000800 | 0x00000200, module, messageId, 0, buffer, buffer.Capacity, IntPtr.Zero);
+            if (n == 0) { error = Marshal.GetLastWin32Error(); return null; }
+            return buffer.ToString(0, n);
+        }
+        finally { FreeLibrary(module); }
     }
 
     // Returns 0 when the logon worked, otherwise the Windows error number.
@@ -558,9 +585,129 @@ function Show-Codes([string]$Text) {
     foreach ($ch in $Text.ToCharArray()) {
         $n = [int]$ch
         if ($n -ge 32 -and $n -le 126) { [void]$sb.Append($ch) }
-        else { [void]$sb.Append(('{{U+{0:X4}}}' -f $n)) }
+        else { [void]$sb.Append('{U+' + $n.ToString('X4') + '}') }
     }
     return $sb.ToString()
+}
+
+# The message pattern Windows holds for one kind of event, tried two ways. Returns a table with
+# Route ('provider data', 'message file' or 'none'), Text and Note.
+function Get-KindPattern([string]$Log, [string]$Provider, [int]$Id, $Version, $Qualifiers) {
+    # Way 1: the provider's own data, through the Event Log API (.NET ProviderMetadata).
+    if (-not $script:ProviderCache.ContainsKey($Provider)) {
+        $entry = @{ Map = @{}; Error = ''; MessageFile = ''; Count = 0; Ms = 0 }
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        try {
+            $pm = New-Object System.Diagnostics.Eventing.Reader.ProviderMetadata($Provider)
+            try {
+                try { $entry.MessageFile = [string]$pm.MessageFilePath } catch { }
+                foreach ($em in $pm.Events) {
+                    $entry.Count++
+                    $text = ''
+                    try { $text = [string]$em.Description } catch { }
+                    $key = "$($em.Id)/$($em.Version)"
+                    if (-not $entry.Map.ContainsKey($key)) { $entry.Map[$key] = $text }
+                    $any = "$($em.Id)/*"
+                    if (-not $entry.Map.ContainsKey($any) -or -not $entry.Map[$any]) { $entry.Map[$any] = $text }
+                }
+            }
+            catch { $entry.Error = 'listing its events failed: ' + $_.Exception.GetType().Name + ': ' + $_.Exception.Message }
+            finally { $pm.Dispose() }
+        }
+        catch { $entry.Error = 'opening it failed: ' + $_.Exception.GetType().Name + ': ' + $_.Exception.Message }
+        $entry.Ms = $sw.ElapsedMilliseconds
+        $script:ProviderCache[$Provider] = $entry
+    }
+    $c = $script:ProviderCache[$Provider]
+    $v = 0
+    if ($null -ne $Version) { $v = [int]$Version }
+    foreach ($key in "$Id/$v", "$Id/*") {
+        if ($c.Map.ContainsKey($key) -and $c.Map[$key]) {
+            return @{ Route = 'provider data'; Text = $c.Map[$key]; Note = '' }
+        }
+    }
+
+    # Way 2: the message file named in the registry for this source, read as plain data.
+    $q = 0
+    if ($null -ne $Qualifiers) { $q = [int]$Qualifiers }
+    $messageId = [uint32]((([int64]$q) -shl 16) -bor ([int64]$Id -band 0xFFFF))
+    $files = New-Object System.Collections.ArrayList
+    try {
+        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\EventLog\$Log\$Provider"
+        $raw = (Get-ItemProperty -LiteralPath $regPath -ErrorAction Stop).EventMessageFile
+        foreach ($part in ([string]$raw -split ';')) {
+            if ($part.Trim()) { [void]$files.Add([Environment]::ExpandEnvironmentVariables($part.Trim())) }
+        }
+    }
+    catch { }
+    $lastError = 0
+    foreach ($file in $files) {
+        $err = 0
+        $text = [ProbeNative]::MessageFromFile($file, $messageId, [ref]$err)
+        if ($text) { return @{ Route = 'message file'; Text = $text; Note = $file } }
+        $lastError = $err
+    }
+    $note = $c.Error
+    if (-not $note) { $note = "provider data lists $($c.Count) kinds, not this one" }
+    if ($files.Count -gt 0) { $note = "$note; message file tried, Windows error $lastError" } else { $note = "$note; no message file in the registry" }
+    return @{ Route = 'none'; Text = ''; Note = $note }
+}
+
+function Survey-Patterns([string]$Log, [int]$Max) {
+    $q = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery($Log, [System.Diagnostics.Eventing.Reader.PathType]::LogName, '*')
+    $q.ReverseDirection = $true
+    $reader = New-Object System.Diagnostics.Eventing.Reader.EventLogReader($q)
+    $kinds = @{}
+    $total = 0
+    try {
+        while ($total -lt $Max) {
+            $ev = $reader.ReadEvent()
+            if ($null -eq $ev) { break }
+            $total++
+            $key = "{0}`t{1}`t{2}`t{3}" -f $ev.ProviderName, $ev.Id, $ev.Version, $ev.Qualifiers
+            if ($kinds.ContainsKey($key)) { $kinds[$key].Events++ }
+            else { $kinds[$key] = @{ Events = 1; Provider = $ev.ProviderName; Id = $ev.Id; Version = $ev.Version; Qualifiers = $ev.Qualifiers } }
+            $ev.Dispose()
+        }
+    }
+    finally { $reader.Dispose() }
+    $byRoute = @{}
+    $rows = New-Object System.Collections.ArrayList
+    foreach ($key in $kinds.Keys) {
+        $k = $kinds[$key]
+        $p = Get-KindPattern $Log $k.Provider $k.Id $k.Version $k.Qualifiers
+        if (-not $byRoute.ContainsKey($p.Route)) { $byRoute[$p.Route] = @{ Kinds = 0; Events = 0 } }
+        $byRoute[$p.Route].Kinds++
+        $byRoute[$p.Route].Events += $k.Events
+        $short = (Show-Codes $p.Text)
+        if ($short.Length -gt 160) { $short = $short.Substring(0, 160) + '...' }
+        [void]$rows.Add(('{0}' -f $k.Events).PadLeft(6) + "`t" + $k.Provider + "`t" + $k.Id + "`t" + $p.Route + "`t" + $short + "`t" + $p.Note)
+    }
+    Say ''
+    Say "PATTERNS for the kinds among the newest $total events of ${Log}: $($kinds.Count) kinds"
+    foreach ($r in ($byRoute.Keys | Sort-Object)) { Say ('  {0,-14} {1,4} kinds, {2,5} events' -f $r, $byRoute[$r].Kinds, $byRoute[$r].Events) }
+    $sorted = @($rows | Sort-Object -Descending)
+    Save-Text "patterns-$Log.tsv" ("events`tprovider`tnumber`troute`tpattern (first 160 characters)`tnote`n" + ($sorted -join "`n") + "`n")
+    Say '  the 12 commonest kinds (events, provider, number, route, start of the pattern):'
+    $shown = 0
+    foreach ($row in $sorted) {
+        if ($shown -ge 12) { break }
+        $cut = $row
+        if ($cut.Length -gt 230) { $cut = $cut.Substring(0, 230) }
+        Say "    $cut"
+        $shown++
+    }
+    Say '  kinds with no pattern (up to 12; events, provider, number, why):'
+    $shown = 0
+    foreach ($row in $sorted) {
+        if ($shown -ge 12) { break }
+        $cols = $row -split "`t"
+        if ($cols[3] -eq 'none') {
+            Say ('    {0} {1} {2} : {3}' -f $cols[0].Trim(), $cols[1], $cols[2], $cols[5])
+            $shown++
+        }
+    }
+    if ($shown -eq 0) { Say '    (none)' }
 }
 
 function Survey-Log([string]$Log, [int]$Max) {
@@ -1260,6 +1407,79 @@ Section '7 bounding a read, and how the API refuses' {
             Say ("Run {0}: {1} Security events read, rendered to XML and formatted to a message ({2} characters) in {3} ms" -f $run, $c.Count, $c.Characters, $sw.ElapsedMilliseconds)
         }
         Say 'ROUGH ONLY, as above. Compare with the XML-only figure in the probe before this one.'
+    }
+}
+
+Section '7b the message pattern of a kind of event, with no event''s values in it' {
+    Say 'For each kind: way 1 asks the provider''s own data through the Event Log API; way 2 reads the'
+    Say 'message file the registry names for the source. A pattern has %1, %2 ... where values go.'
+    $wanted = @(
+        @('Security', 'Microsoft-Windows-Security-Auditing', 4625),
+        @('Security', 'Microsoft-Windows-Security-Auditing', 4624),
+        @('System', 'Service Control Manager', 7031),
+        @('System', 'Service Control Manager', 7034),
+        @('System', 'Service Control Manager', 7036),
+        @('System', 'Service Control Manager', 7000),
+        @('Application', 'aigolog-probe-eventcreate', 999),
+        @('Application', 'aigolog-probe-unregistered', 4242)
+    )
+    foreach ($w in $wanted) {
+        $log = $w[0]
+        $provider = $w[1]
+        $id = $w[2]
+        Probe "pattern of $provider / $id" {
+            $ev = Read-Log -Path $log -XPath "*[System[Provider[@Name='$provider'] and (EventID=$id)]]" -Max 1 -WithMessage $true
+            if ($ev.Count -eq 0) {
+                Say "No event of this kind is in the $log log."
+                return
+            }
+            $doc = New-Object System.Xml.XmlDocument
+            $doc.LoadXml($ev[0].Xml)
+            $idNode = $doc.DocumentElement.SelectSingleNode("*[local-name()='System']/*[local-name()='EventID']")
+            $verNode = $doc.DocumentElement.SelectSingleNode("*[local-name()='System']/*[local-name()='Version']")
+            $qual = $null
+            if ($idNode -and $idNode.HasAttribute('Qualifiers')) { $qual = [int]$idNode.GetAttribute('Qualifiers') }
+            $ver = 0
+            if ($verNode) { $ver = [int]$verNode.InnerText }
+            $p = Get-KindPattern $log $provider $id $ver $qual
+            $c = $script:ProviderCache[$provider]
+            Say ("Provider data: {0} kinds listed in {1} ms; message file it names: '{2}'; problem: '{3}'" -f $c.Count, $c.Ms, $c.MessageFile, $c.Error)
+            Say ("ROUTE: {0}   {1}" -f $p.Route, $p.Note)
+            if ($p.Text) {
+                Say 'PATTERN (characters outside printable ASCII written {U+XXXX}):'
+                Say (Show-Codes $p.Text)
+            }
+            Say ("One event of this kind, record {0}, its values in order:" -f $ev[0].RecordId)
+            Say (Get-DataLines $ev[0].Xml)
+            if ($ev[0].Message) {
+                $m = $ev[0].Message
+                if ($m.Length -gt 400) { $m = $m.Substring(0, 400) + ' ...' }
+                Say 'The same event''s own message, for comparison (first 400 characters):'
+                Say (Show-Codes $m)
+            }
+            else { Say 'That event has no message of its own.' }
+        }
+    }
+    Probe 'how many kinds have a pattern, in each log' {
+        Survey-Patterns 'Application' 500
+        Survey-Patterns 'System' 500
+        Survey-Patterns 'Security' 500
+    }
+    Probe 'how long the provider data took to list, slowest first' {
+        $rows = New-Object System.Collections.ArrayList
+        foreach ($name in $script:ProviderCache.Keys) {
+            $c = $script:ProviderCache[$name]
+            [void]$rows.Add(('{0}' -f $c.Ms).PadLeft(7) + " ms  " + ('{0}' -f $c.Count).PadLeft(5) + " kinds  " + $name + $(if ($c.Error) { '   [' + $c.Error + ']' } else { '' }))
+        }
+        $sorted = @($rows | Sort-Object -Descending)
+        Say "Providers asked: $($sorted.Count). ROUGH ONLY: a shared runner, through .NET."
+        $n = 0
+        foreach ($row in $sorted) {
+            if ($n -ge 12) { break }
+            if ($row.Length -gt 200) { $row = $row.Substring(0, 200) }
+            Say "  $row"
+            $n++
+        }
     }
 }
 
