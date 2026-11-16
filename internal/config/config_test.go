@@ -7,6 +7,7 @@
 package config
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -132,5 +133,50 @@ func TestNoConfigFolderAndNoOverrideGivesTheDefaults(t *testing.T) {
 	got, err = Load(env(map[string]string{"AIGOLOG_KEEP_DAYS": "4"}))
 	if err != nil || got.KeepDays != 4 {
 		t.Errorf("a variable must still apply: got %+v, %v", got, err)
+	}
+}
+
+func TestAConfigFileWithAByteOrderMarkIsRead(t *testing.T) {
+	p := writeConfig(t, "\xef\xbb\xbf"+`{"keep_days": 3}`)
+	got, err := Load(env(map[string]string{"AIGOLOG_CONFIG": p}))
+	if err != nil || got.KeepDays != 3 {
+		t.Errorf("got %+v, %v", got, err)
+	}
+	only := writeConfig(t, "\xef\xbb\xbf")
+	_, err = Load(env(map[string]string{"AIGOLOG_CONFIG": only}))
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Errorf("a file of only a byte-order mark: err = %v, want the empty-file message", err)
+	}
+}
+
+func TestOutOfRangeEnvironmentNumbersAreRefusedNotClamped(t *testing.T) {
+	p := writeConfig(t, `{}`)
+	for _, c := range []struct{ name, val string }{
+		{"AIGOLOG_MAX_TOTAL_BYTES", "99999999999999999999"},
+		{"AIGOLOG_KEEP_DAYS", "99999999999999999999"},
+		{"AIGOLOG_KEEP_DAYS", "-99999999999999999999"},
+	} {
+		_, err := Load(env(map[string]string{"AIGOLOG_CONFIG": p, c.name: c.val}))
+		if err == nil || !strings.Contains(err.Error(), c.name) {
+			t.Errorf("%s=%s: err = %v, want a message that names %s", c.name, c.val, err, c.name)
+		}
+	}
+	got, err := Load(env(map[string]string{"AIGOLOG_CONFIG": p, "AIGOLOG_MAX_TOTAL_BYTES": "9223372036854775807"}))
+	if err != nil || got.MaxTotalBytes != math.MaxInt64 {
+		t.Errorf("the largest int64: got %+v, %v", got, err)
+	}
+}
+
+func TestAnEmptyFileAndADirectoryAreErrorsAndNullKeysAreLeftOut(t *testing.T) {
+	_, err := Load(env(map[string]string{"AIGOLOG_CONFIG": writeConfig(t, "")}))
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Errorf("a zero-byte file: err = %v, want the empty-file message", err)
+	}
+	if _, err := Load(env(map[string]string{"AIGOLOG_CONFIG": t.TempDir()})); err == nil {
+		t.Error("a directory as the configuration file: want an error")
+	}
+	got, err := Load(env(map[string]string{"AIGOLOG_CONFIG": writeConfig(t, `{"keep_days": null, "cache_dir": null}`)}))
+	if err != nil || got != Defaults() {
+		t.Errorf("null keys: got %+v, %v, want the defaults", got, err)
 	}
 }

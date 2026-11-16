@@ -75,8 +75,11 @@ type fileConfig struct {
 // AIGOLOG_CONFIG (or the file at DefaultPath when it is not set), then
 // AIGOLOG_KEEP_DAYS, AIGOLOG_MAX_TOTAL_BYTES and AIGOLOG_CACHE_DIR, each of
 // which replaces the value before it when it is set and not empty. A missing
-// file is not an error. lookupEnv reads the environment; Load never calls
-// os.Getenv.
+// file is not an error. A file named by AIGOLOG_CONFIG that does not exist
+// gives the defaults, as the brief requires (the caller may want to tell the
+// user). lookupEnv reads the environment; Load never calls os.Getenv. A nil
+// lookupEnv means an empty environment (the file at DefaultPath is still
+// read).
 func Load(lookupEnv func(string) (string, bool)) (Config, error) {
 	if lookupEnv == nil {
 		lookupEnv = func(string) (string, bool) { return "", false }
@@ -131,6 +134,11 @@ func readFile(path string, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("reading the configuration file %s: %w", path, err)
 	}
+
+	// Windows editors and PowerShell 5.1 write a UTF-8 byte-order mark; drop
+	// one, before the empty check, so a file of only a mark reads as empty.
+	// UTF-16 is not supported and stays an error.
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
