@@ -194,4 +194,48 @@ func TestMemoryDoesNotGrowWithTheInput(t *testing.T) {
 	}
 }
 
+// sampler is lines that measures the heap while the run is reading it: at a
+// line boundary, every 50,000 lines, it collects garbage and keeps the largest
+// growth over the baseline.
+type sampler struct {
+	lines
+	baseline uint64
+	peak     int64
+	samples  int
+}
+
+func (s *sampler) Read(p []byte) (int, error) {
+	if len(s.buf) == 0 && s.i > 0 && s.i%50000 == 0 {
+		var m runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&m)
+		if grown := int64(m.HeapAlloc) - int64(s.baseline); grown > s.peak {
+			s.peak = grown
+		}
+		s.samples++
+	}
+	return s.lines.Read(p)
+}
+
+func TestMemoryDuringTheRunDoesNotGrowWithTheInput(t *testing.T) {
+	d := newDB(t)
+	var m runtime.MemStats
+	runtime.GC()
+	runtime.GC()
+	runtime.ReadMemStats(&m)
+	s := &sampler{lines: lines{n: 400000}, baseline: m.HeapAlloc}
+	res, err := Run(ctx, d, []Input{{Name: "big.log", R: s}}, Options{Now: time.Now(), Zone: time.UTC})
+	if err != nil || res.Records != 400000 {
+		t.Fatalf("res = %+v, err = %v", res.Records, err)
+	}
+	if s.samples == 0 {
+		t.Fatal("the heap was never sampled during the run")
+	}
+	// Keeping the 400,000 records of about 100 bytes would show as 40 MB or more.
+	if s.peak > 24<<20 {
+		t.Errorf("the heap grew by %d MiB during the run (%d samples)", s.peak>>20, s.samples)
+	}
+	t.Logf("peak growth %d bytes over %d samples", s.peak, s.samples)
+}
+
 var _ record.Reader = (*text.Reader)(nil)
