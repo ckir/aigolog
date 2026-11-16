@@ -12,6 +12,7 @@ package timeparse
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -65,9 +66,38 @@ const detectLines = 100
 // WallNanos returns the nanoseconds since 1970 of the year, month, day, hour,
 // minute, second and nanosecond of t, read as UTC. The zone of t is dropped.
 func WallNanos(t time.Time) int64 {
+	return wallTime(t).UnixNano()
+}
+
+// wallTime returns the year, month, day, hour, minute, second and nanosecond
+// of t, read as UTC.
+func wallTime(t time.Time) time.Time {
 	y, mo, d := t.Date()
 	h, mi, s := t.Clock()
-	return time.Date(y, mo, d, h, mi, s, t.Nanosecond(), time.UTC).UnixNano()
+	return time.Date(y, mo, d, h, mi, s, t.Nanosecond(), time.UTC)
+}
+
+// The whole seconds since 1970 that a count of nanoseconds in an int64 can
+// reach, about 1677-09-21 to 2262-04-11.
+const (
+	minSecond = math.MinInt64 / 1_000_000_000
+	maxSecond = math.MaxInt64 / 1_000_000_000
+)
+
+// nanosOf returns the nanoseconds since 1970 of t. It is false when t is too
+// far from 1970 to be counted in an int64 (time.Time.UnixNano gives a wrapped
+// number then, so it is checked and never returned).
+func nanosOf(t time.Time) (int64, bool) {
+	if s := t.Unix(); s < minSecond || s > maxSecond {
+		return 0, false
+	}
+	n := t.UnixNano()
+	// Within the last whole second at either end a fraction can still wrap,
+	// and then the count does not give t back.
+	if !time.Unix(0, n).Equal(t) {
+		return 0, false
+	}
+	return n, true
 }
 
 // isSpace reports whether b is white space.
@@ -136,9 +166,17 @@ func (l Layout) Parse(line string) (record.Stamp, bool) {
 			NanoOfDay: int64(time.Duration(t.Hour())*time.Hour + time.Duration(t.Minute())*time.Minute + time.Duration(t.Second())*time.Second + time.Duration(t.Nanosecond())),
 		}, true
 	case l.zone != zoneNone:
-		return record.Stamp{State: record.Resolved, Nanos: t.UnixNano(), Exact: true, Zone: zoneText(text, l.zone)}, true
+		n, ok := nanosOf(t)
+		if !ok {
+			return record.Stamp{}, false
+		}
+		return record.Stamp{State: record.Resolved, Nanos: n, Exact: true, Zone: zoneText(text, l.zone)}, true
 	}
-	return record.Stamp{State: record.Resolved, Nanos: WallNanos(t)}, true
+	n, ok := nanosOf(wallTime(t))
+	if !ok {
+		return record.Stamp{}, false
+	}
+	return record.Stamp{State: record.Resolved, Nanos: n}, true
 }
 
 // zoneText returns the zone as written at the end of the matched text.

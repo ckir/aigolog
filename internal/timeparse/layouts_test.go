@@ -7,6 +7,7 @@
 package timeparse
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -138,5 +139,71 @@ func TestDetectNeedsHalfOfTheLinesToFit(t *testing.T) {
 	}
 	if _, ok := Detect(nil); ok {
 		t.Error("a layout was found in no lines")
+	}
+}
+
+func TestParseRefusesTimesThatDoNotFitInInt64Nanoseconds(t *testing.T) {
+	iso := layoutNamed(t, "iso-space")
+	for _, line := range []string{"0001-01-01 00:00:00 x", "9999-12-31 23:59:59", "2262-04-11 23:47:17", "1677-09-21 00:12:43"} {
+		if got, ok := iso.Parse(line); ok {
+			t.Errorf("iso-space: Parse(%q) = %+v, true; want a refusal", line, got)
+		}
+	}
+	for _, line := range []string{"9999-12-31T23:59:59Z", "0001-01-01T00:00:00Z x", "9999-12-31T23:59:59-07:00"} {
+		if got, ok := layoutNamed(t, "rfc3339").Parse(line); ok {
+			t.Errorf("rfc3339: Parse(%q) = %+v, true; want a refusal", line, got)
+		}
+	}
+}
+
+func TestParseAcceptsTheEdgesOfTheInt64NanosecondRange(t *testing.T) {
+	const maxSec = math.MaxInt64 / 1_000_000_000
+	const minSec = math.MinInt64 / 1_000_000_000
+	const f = "2006-01-02 15:04:05"
+	iso := layoutNamed(t, "iso-space")
+	cases := []struct {
+		sec  int64
+		want int64
+		ok   bool
+	}{
+		{maxSec, time.Date(2262, 4, 11, 23, 47, 16, 0, time.UTC).UnixNano(), true},
+		{maxSec + 1, 0, false},
+		{minSec, time.Date(1677, 9, 21, 0, 12, 44, 0, time.UTC).UnixNano(), true},
+		{minSec - 1, 0, false},
+	}
+	for _, c := range cases {
+		line := time.Unix(c.sec, 0).UTC().Format(f)
+		got, ok := iso.Parse(line)
+		want := record.Stamp{}
+		if c.ok {
+			want = record.Stamp{State: record.Resolved, Nanos: c.want}
+		}
+		if ok != c.ok || got != want {
+			t.Errorf("Parse(%q) (second %d) = %+v, %v; want %+v, %v", line, c.sec, got, ok, want, c.ok)
+		}
+		zoned := strings.Replace(line, " ", "T", 1) + "Z"
+		got, ok = layoutNamed(t, "rfc3339").Parse(zoned)
+		want = record.Stamp{}
+		if c.ok {
+			want = record.Stamp{State: record.Resolved, Nanos: c.want, Exact: true, Zone: "Z"}
+		}
+		if ok != c.ok || got != want {
+			t.Errorf("rfc3339: Parse(%q) (second %d) = %+v, %v; want %+v, %v", zoned, c.sec, got, ok, want, c.ok)
+		}
+	}
+	// A fraction after the last whole second can still wrap: the last
+	// nanosecond that fits is .854775807.
+	if got, ok := iso.Parse("2262-04-11 23:47:16.854775807"); !ok || got.Nanos != math.MaxInt64 {
+		t.Errorf("the last nanosecond that fits: got %+v, %v", got, ok)
+	}
+	if got, ok := iso.Parse("2262-04-11 23:47:16.9"); ok {
+		t.Errorf("a fraction past the last nanosecond that fits was accepted: %+v", got)
+	}
+}
+
+func TestParseStillAcceptsAStampWithNoYear(t *testing.T) {
+	want := record.Stamp{State: record.YearPending, Month: 12, Day: 31, NanoOfDay: int64(23*time.Hour + 59*time.Minute + 59*time.Second)}
+	if got, ok := layoutNamed(t, "syslog").Parse("Dec 31 23:59:59 host x"); !ok || got != want {
+		t.Errorf("Parse = %+v, %v; want %+v, true", got, ok, want)
 	}
 }
