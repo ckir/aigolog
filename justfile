@@ -9,6 +9,15 @@ license_args := "-f header.txt -ignore 'testdata/**' -ignore 'docs/**' -ignore '
 default:
     @just --list
 
+# Fail with a hint when a tool is not on the path.
+_need tool hint:
+    @command -v {{tool}} >/dev/null 2>&1 || { echo "missing: {{tool}} ({{hint}})"; exit 1; }
+
+# Check that the tools are present, install the git hooks, and run the program once.
+setup: (_need "go" "Go 1.26 or newer, https://go.dev/dl/") (_need "lefthook" "go install github.com/evilmartians/lefthook/v2@v2.1.17") (_need "addlicense" "go install github.com/google/addlicense@v1.2.0")
+    lefthook install
+    go run ./cmd/aigolog version
+
 # Rewrite the Go files in the standard format.
 fmt:
     gofmt -w cmd internal

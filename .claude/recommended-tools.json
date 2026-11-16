@@ -1,0 +1,11 @@
+[
+  {"name": "go", "why": "builds and tests aigolog; go.mod needs 1.26 or newer", "install": "https://go.dev/dl/", "in_path": "go"},
+  {"name": "just", "why": "every project command; `just check` is the gate", "install": "https://github.com/casey/just/releases/tag/1.58.0", "in_path": "just"},
+  {"name": "lefthook", "why": "runs the quick checks before a commit and the gate before a push", "install": "go install github.com/evilmartians/lefthook/v2@v2.1.17", "in_path": "lefthook"},
+  {"name": "addlicense", "why": "checks that source files carry the licence header", "install": "go install github.com/google/addlicense@v1.2.0", "in_path": "addlicense"},
+  {"name": "source: modernc.org/sqlite v1.62.0", "why": "the store's engine; read its source at this tag before reasoning about it", "install": "git clone --depth 1 --branch v1.62.0 https://gitlab.com/cznic/sqlite"},
+  {"name": "source: elastic/beats v9.5.6 (winlogbeat)", "why": "a shipping reader of the Windows Event Log in Go; design section 9 cites it", "install": "git clone --depth 1 --branch v9.5.6 https://github.com/elastic/beats"},
+  {"name": "source: google/addlicense v1.2.0", "why": "design section 10 cites its header test", "install": "git clone --depth 1 --branch v1.2.0 https://github.com/google/addlicense"},
+  {"name": "source: casey/just 1.58.0", "why": "design section 9 cites how it picks a shell on Windows", "install": "git clone --depth 1 --branch 1.58.0 https://github.com/casey/just"},
+  {"name": "source: evilmartians/lefthook v2.1.17", "why": "design section 9 cites the hook it installs", "install": "git clone --depth 1 --branch v2.1.17 https://github.com/evilmartians/lefthook"}
+]
