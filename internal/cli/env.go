@@ -25,8 +25,12 @@ import (
 // Env is everything a command takes from the world around it, so that a test
 // can give it a private one. A nil Stdin is an empty input, a nil LookupEnv an
 // empty environment, a nil Now is time.Now and a nil Zone is time.Local.
-// Stdout and Stderr are used as given.
+// Stdout and Stderr are used as given. A nil Context makes analyze catch
+// SIGINT and SIGTERM itself (and Ctrl-C on Windows); a test gives its own.
 type Env struct {
+	// Context ends a run that is in progress when it is cancelled: analyze
+	// stops, removes its database and exits with code 1.
+	Context   context.Context
 	Stdin     io.Reader
 	Stdout    io.Writer
 	Stderr    io.Writer

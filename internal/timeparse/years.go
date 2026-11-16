@@ -94,5 +94,5 @@ func ParseAsOf(s string) (int64, error) {
 		}
 		return n, nil
 	}
-	return 0, fmt.Errorf("as-of %q: want 2006-01-02, 2006-01-02 15:04, 2006-01-02 15:04:05, or the same with T between date and time", s)
+	return 0, fmt.Errorf("as-of %q: want YYYY-MM-DD, YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM:SS, or the same with T between the date and the time", s)
 }

@@ -7,6 +7,7 @@
 package timeparse
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -143,5 +144,15 @@ func TestAnAnchorAtTheEdgeOfTheRangeDoesNotWrap(t *testing.T) {
 	}
 	if got, want := resolveBackwards(anchor, []pending{{12, 31, 0}}), []string{"2261-12-31 00:00:00"}; !equal(got, want) {
 		t.Errorf("31 December at the edge: got %v, want %v", got, want)
+	}
+}
+
+func TestTheAsOfMessageDoesNotUseGoReferenceDates(t *testing.T) {
+	_, err := ParseAsOf("2026-02-30")
+	if err == nil {
+		t.Fatal("2026-02-30 was accepted")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "YYYY-MM-DD") || strings.Contains(msg, "2006") || !strings.HasPrefix(msg, `as-of "2026-02-30":`) {
+		t.Errorf("message = %q", msg)
 	}
 }

@@ -9,6 +9,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -30,6 +31,10 @@ type harness struct {
 	now   time.Time
 	// config, when it is not empty, is the file that AIGOLOG_CONFIG names.
 	config string
+	// ctx, when it is not nil, is the Context of the Env.
+	ctx context.Context
+	// stdinReader, when it is not nil, is the standard input, in place of stdin.
+	stdinReader io.Reader
 }
 
 func newHarness(t *testing.T) *harness {
@@ -44,8 +49,13 @@ func (h *harness) run(args ...string) (code int, out, errOut string) {
 	if h.config != "" {
 		vars["AIGOLOG_CONFIG"] = h.config
 	}
+	var stdin io.Reader = strings.NewReader(h.stdin)
+	if h.stdinReader != nil {
+		stdin = h.stdinReader
+	}
 	code = RunEnv(Env{
-		Stdin:     strings.NewReader(h.stdin),
+		Context:   h.ctx,
+		Stdin:     stdin,
 		Stdout:    &o,
 		Stderr:    &e,
 		LookupEnv: func(k string) (string, bool) { v, ok := vars[k]; return v, ok },
@@ -360,5 +370,137 @@ func TestListShowsALiveRunAsRunning(t *testing.T) {
 	}
 	if _, err := os.Stat(db.Path()); err != nil {
 		t.Errorf("the live database is gone: %v", err)
+	}
+}
+
+// cancelOnSecondRead is a standard input of one line whose next read cancels
+// the context, as a signal that arrives while the input is being read does.
+type cancelOnSecondRead struct {
+	cancel context.CancelFunc
+	reads  int
+}
+
+func (c *cancelOnSecondRead) Read(p []byte) (int, error) {
+	c.reads++
+	if c.reads == 1 {
+		return copy(p, "x\n"), nil
+	}
+	c.cancel()
+	return 0, io.EOF
+}
+
+func noFilesIn(t *testing.T, dir string) {
+	t.Helper()
+	for _, pattern := range []string{"*.db", "*.lock", "*-journal"} {
+		if m, _ := filepath.Glob(filepath.Join(dir, pattern)); len(m) != 0 {
+			t.Errorf("%s left in %s: %v", pattern, dir, m)
+		}
+	}
+}
+
+func TestAnInterruptedAnalysisRemovesItsDatabaseWhateverTheFlags(t *testing.T) {
+	for _, args := range [][]string{{"analyze", "-"}, {"analyze", "--no-keep", "-"}} {
+		h := newHarness(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		h.ctx = ctx
+		h.stdinReader = &cancelOnSecondRead{cancel: cancel}
+		code, out, errOut := h.run(args...)
+		if code != exitcode.Failure || out != "" || !strings.Contains(errOut, "interrupted") {
+			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errOut)
+		}
+		noFilesIn(t, h.cache)
+	}
+
+	h := newHarness(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	h.ctx = ctx
+	code, out, errOut := h.run("analyze", h.file("a.log", "x\n"))
+	if code != exitcode.Failure || out != "" || !strings.Contains(errOut, "interrupted") {
+		t.Errorf("already cancelled: code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	if _, err := os.Stat(h.cache); !os.IsNotExist(err) {
+		t.Errorf("the cache folder was made: %v", err)
+	}
+}
+
+func TestADatabaseOverTheSizeLimitIsWarnedAboutAndRemovedAtTheNextRun(t *testing.T) {
+	h := newHarness(t)
+	h.config = h.file("config.json", `{"max_total_bytes": 1}`)
+	p := h.file("a.log", "2026-01-05 10:00:01 a\n")
+	code, out, errOut := h.run("analyze", p)
+	if code != exitcode.OK || !strings.Contains(errOut, "over the limit of 1 bytes") || !strings.Contains(errOut, "max_total_bytes") {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	m := regexp.MustCompile(`(?m)^database: (.+\.db) \(`).FindStringSubmatch(out)
+	if m == nil || !strings.Contains(out, "kept 7 days") {
+		t.Fatalf("the database line is not as before:\n%s", out)
+	}
+	first := m[1]
+	if _, err := os.Stat(first); err != nil {
+		t.Fatalf("the first database is not there: %v", err)
+	}
+	if code, _, errOut = h.run("analyze", p); code != exitcode.OK {
+		t.Fatalf("second run: code %d, stderr %q", code, errOut)
+	}
+	if _, err := os.Stat(first); !os.IsNotExist(err) || dbCount(t, h.cache) != 1 {
+		t.Errorf("the first database: %v; databases %d; want it gone and one left", err, dbCount(t, h.cache))
+	}
+}
+
+func TestNoWarningWithTheDefaultLimitOrWithNoKeep(t *testing.T) {
+	h := newHarness(t)
+	if code, _, errOut := h.run("analyze", h.file("a.log", "x\n")); code != exitcode.OK || errOut != "" {
+		t.Errorf("default limit: code %d, stderr %q", code, errOut)
+	}
+	h = newHarness(t)
+	h.config = h.file("config.json", `{"max_total_bytes": 1}`)
+	if code, _, errOut := h.run("analyze", "--no-keep", h.file("a.log", "x\n")); code != exitcode.OK || errOut != "" {
+		t.Errorf("--no-keep: code %d, stderr %q", code, errOut)
+	}
+}
+
+func TestAnAnalysisRemovesDatabasesOlderThanKeepDays(t *testing.T) {
+	for _, tc := range []struct {
+		later time.Duration
+		want  int
+	}{{8 * 24 * time.Hour, 1}, {6 * 24 * time.Hour, 2}} {
+		h := newHarness(t)
+		h.now = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+		p := h.file("a.log", "x\n")
+		code, out, errOut := h.run("analyze", p)
+		if code != exitcode.OK {
+			t.Fatalf("first run: code %d, stderr %q", code, errOut)
+		}
+		first := regexp.MustCompile(`(?m)^database: (.+\.db) \(`).FindStringSubmatch(out)[1]
+		h.now = h.now.Add(tc.later)
+		if code, _, errOut = h.run("analyze", p); code != exitcode.OK {
+			t.Fatalf("second run: code %d, stderr %q", code, errOut)
+		}
+		if got := dbCount(t, h.cache); got != tc.want {
+			t.Errorf("%v later: %d databases, want %d", tc.later, got, tc.want)
+		}
+		_, err := os.Stat(first)
+		if gone := os.IsNotExist(err); gone != (tc.want == 1) {
+			t.Errorf("%v later: first database gone %v", tc.later, gone)
+		}
+	}
+}
+
+func TestAFileThatCannotBeReadIsNamedOnce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the wording of the system errors differs on Windows")
+	}
+	h := newHarness(t)
+	missing := filepath.Join(t.TempDir(), "absent.log")
+	code, _, errOut := h.run("analyze", missing)
+	if want := "aigolog: cannot read " + missing + ": no such file or directory\n"; code != exitcode.Failure || errOut != want {
+		t.Errorf("missing: code %d, stderr %q, want %q", code, errOut, want)
+	}
+	dir := t.TempDir()
+	code, _, errOut = h.run("analyze", dir)
+	if want := "aigolog: cannot read " + dir + ": is a directory\n"; code != exitcode.Failure || errOut != want {
+		t.Errorf("directory: code %d, stderr %q, want %q", code, errOut, want)
 	}
 }

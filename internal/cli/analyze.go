@@ -12,7 +12,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	iofs "io/fs"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ckir/aigolog/internal/buildinfo"
@@ -154,6 +158,39 @@ func endedByDoubleDash(fs *flag.FlagSet, consumed []string) bool {
 	return false
 }
 
+// interruptContext returns a context that ends at the first SIGINT or SIGTERM
+// (Ctrl-C on Windows). At that moment it stops catching signals, so that a
+// second one ends the process at once, which matters for a run that is blocked
+// reading standard input and notices the first only when the read returns, and
+// it says so on w. stop must be called when the command ends; it waits for the
+// goroutine that says so, which says nothing when the command ended without a
+// signal.
+func interruptContext(w io.Writer) (ctx context.Context, stop func()) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	finished := make(chan struct{})
+	exited := make(chan struct{})
+	go func() {
+		defer close(exited)
+		select {
+		case <-finished:
+			return
+		case <-ctx.Done():
+		}
+		select {
+		case <-finished:
+			return // the command ended and stop cancelled the context
+		default:
+		}
+		cancel() // from here a second signal has its default effect
+		fmt.Fprintln(w, "aigolog: interrupting; press Ctrl-C again to stop at once")
+	}()
+	return ctx, func() {
+		close(finished)
+		cancel()
+		<-exited
+	}
+}
+
 // analyze reads logs into a new database and says what was read.
 func analyze(env Env, args []string) int {
 	a, code, ok := parseAnalyzeArgs(env, args)
@@ -164,6 +201,13 @@ func analyze(env Env, args []string) int {
 	if err != nil {
 		report(env.Stderr, err.Error())
 		return exitcode.Usage
+	}
+
+	ctx := env.Context
+	if ctx == nil {
+		var stop func()
+		ctx, stop = interruptContext(env.Stderr)
+		defer stop()
 	}
 
 	var closers []io.Closer
@@ -180,7 +224,13 @@ func analyze(env Env, args []string) int {
 		}
 		in, c, err := ingest.OpenFile(name)
 		if err != nil {
-			report(env.Stderr, fmt.Sprintf("cannot read %s: %v", name, err))
+			// A *PathError names the file again in its text; its cause is enough.
+			detail := err.Error()
+			var pe *iofs.PathError
+			if errors.As(err, &pe) {
+				detail = pe.Err.Error()
+			}
+			report(env.Stderr, fmt.Sprintf("cannot read %s: %s", name, detail))
 			return exitcode.Failure
 		}
 		closers = append(closers, c)
@@ -201,7 +251,10 @@ func analyze(env Env, args []string) int {
 		warn(env.Stderr, e)
 	}
 
-	ctx := context.Background()
+	if ctx.Err() != nil {
+		report(env.Stderr, "interrupted")
+		return exitcode.Failure
+	}
 	db, err := store.Create(ctx, store.Options{Dir: dir, Now: env.Now})
 	if err != nil {
 		report(env.Stderr, fmt.Sprintf("cannot write the database in %s: %v", dir, err))
@@ -209,6 +262,15 @@ func analyze(env Env, args []string) int {
 	}
 	res, err := ingest.Run(ctx, db, inputs, ingest.Options{AsOf: a.asOf, Now: now, Zone: env.Zone})
 	if err != nil {
+		if ctx.Err() != nil {
+			// An interruption, whatever error it made on the way: the
+			// incomplete database goes, with or without --no-keep.
+			if rmErr := db.Remove(); rmErr != nil {
+				warn(env.Stderr, rmErr)
+			}
+			report(env.Stderr, "interrupted")
+			return exitcode.Failure
+		}
 		var inErr *ingest.InputError
 		code := exitcode.StorageUnavailable
 		if errors.As(err, &inErr) || errors.Is(err, ingest.ErrNothingToAnalyse) {
@@ -237,6 +299,12 @@ func analyze(env Env, args []string) int {
 		}
 	}
 	printSummary(env.Stdout, res, db.Path(), size, kept, cfg.KeepDays)
+	if kept && !a.noKeep && size > cfg.MaxTotalBytes {
+		// The summary says how long the database is kept, but the size limit
+		// removes the oldest databases first at the next analysis, this one
+		// included when it alone is over the limit.
+		report(env.Stderr, fmt.Sprintf("warning: this database is %d bytes, over the limit of %d bytes (max_total_bytes); the next analysis will remove it", size, cfg.MaxTotalBytes))
+	}
 	if kept && !a.noKeep {
 		if err := db.Close(); err != nil {
 			warn(env.Stderr, err)

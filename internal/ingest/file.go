@@ -7,9 +7,10 @@
 package ingest
 
 import (
-	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"syscall"
 )
 
 // OpenFile opens the file at path for reading. It takes the size and the
@@ -32,7 +33,7 @@ func OpenFile(path string) (Input, io.Closer, error) {
 	switch {
 	case fi.IsDir():
 		f.Close()
-		return Input{}, nil, fmt.Errorf("%s: is a directory", path)
+		return Input{}, nil, &fs.PathError{Op: "open", Path: path, Err: syscall.EISDIR}
 	case fi.Mode().IsRegular():
 		return Input{Name: path, R: io.LimitReader(f, fi.Size()), ModTime: fi.ModTime()}, f, nil
 	default:
