@@ -435,3 +435,59 @@ func TestAFailedCreateLeavesNoFile(t *testing.T) {
 	}
 	parentIsEmpty(t, dir)
 }
+
+func TestMethodsAfterCloseReturnErrClosedInsteadOfPanicking(t *testing.T) {
+	d := newDB(t)
+	src, err := d.AddSource(ctx, Source{Name: "s", Format: "text", Encoding: "utf-8", TimeKind: TimeNone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	calls := map[string]func() error{
+		"AddSource":    func() error { _, err := d.AddSource(ctx, Source{Name: "s"}); return err },
+		"Append":       func() error { return d.Append(ctx, []record.Record{{Source: src, Raw: "x"}}) },
+		"ResolveYears": func() error { return d.ResolveYears(ctx, src, timeparse.NewYearResolver(0)) },
+		"FinishSource": func() error { _, err := d.FinishSource(ctx, src, 0, 0); return err },
+		"MarkComplete": func() error { return d.MarkComplete(ctx) },
+		"Records":      func() error { return d.Records(ctx, src, func(int64, record.Record) error { return nil }) },
+	}
+	for name, call := range calls {
+		if err := call(); !errors.Is(err, ErrClosed) {
+			t.Errorf("%s after Close = %v, want ErrClosed", name, err)
+		}
+	}
+	if d.Path() == "" {
+		t.Error("Path is empty after Close")
+	}
+	if _, err := d.Size(); err != nil {
+		t.Errorf("Size after Close: %v", err)
+	}
+	if err := d.Close(); err != nil {
+		t.Errorf("second Close: %v", err)
+	}
+	if err := d.Remove(); err != nil {
+		t.Errorf("Remove after Close: %v", err)
+	}
+}
+
+func TestCreateNamesTheFolderNotAPlaceholderPath(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "a?b")
+	d, err := Create(ctx, Options{Dir: dir})
+	if err == nil {
+		d.Close()
+		t.Fatal("Create accepted a folder with a \"?\" in its path")
+	}
+	if !strings.Contains(err.Error(), dir) || strings.Contains(err.Error(), "00010101T000000Z") {
+		t.Errorf("err = %v; want it to name the folder %q and no placeholder file name", err, dir)
+	}
+	d, err = Create(ctx, Options{Dir: "file:x"})
+	if err == nil {
+		d.Close()
+		t.Fatal("Create accepted a folder that starts with \"file:\"")
+	}
+	if !strings.Contains(err.Error(), `"file:x"`) || strings.Contains(err.Error(), "00010101T000000Z") {
+		t.Errorf("err = %v; want it to name the folder file:x and no placeholder file name", err)
+	}
+}

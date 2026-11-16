@@ -7,7 +7,9 @@
 package store
 
 import (
+	"database/sql"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -215,5 +217,149 @@ func TestAnOrphanLockStaysHeldWhileSweepDeletesIt(t *testing.T) {
 	}
 	if exists(orphan) {
 		t.Error("the orphan lock was not removed")
+	}
+}
+
+// lockOf returns the path of the lock file of the database at path.
+func lockOf(path string) string { return strings.TrimSuffix(path, ".db") + ".lock" }
+
+// plainDatabase makes a database file named like ours, with the statements
+// given and no table of aigolog, in dir; it makes the lock file too.
+func plainDatabase(t *testing.T, dir string, created time.Time, statements ...string) string {
+	t.Helper()
+	path := filepath.Join(dir, DatabaseName(created, "0badf00d"))
+	db, err := sql.Open(DriverName, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range statements {
+		if _, err := db.Exec(s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lockOf(path), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestSweepKeepsADatabaseThatItCannotOpenForWantOfPermission(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes do not deny access on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can open a file whatever its mode")
+	}
+	for _, name := range []string{"by age and state", "by the size limit"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := made(t, dir, now.Add(-time.Hour), true, 3)
+			if err := os.Chmod(path, 0o000); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { os.Chmod(path, 0o600) })
+			p := Policy{MaxAge: 7 * 24 * time.Hour, MaxTotalBytes: 1 << 30, Now: now}
+			if name == "by the size limit" {
+				p.MaxTotalBytes = 1
+			}
+			res, err := Sweep(dir, p)
+			if err != nil {
+				t.Fatalf("Sweep: %v", err)
+			}
+			if !exists(path) || !exists(lockOf(path)) {
+				t.Errorf("db exists %v, lock exists %v; want both kept", exists(path), exists(lockOf(path)))
+			}
+			if len(res.Removed) != 0 || len(res.Kept) != 1 || res.Kept[0].Path != path || res.Kept[0].State != "unreadable" {
+				t.Errorf("result = %+v; want it kept and shown as unreadable", res)
+			}
+		})
+	}
+}
+
+func TestSweepKeepsADatabaseWhoseRecordsItCannotCount(t *testing.T) {
+	// A complete database whose records table another version renamed: the
+	// program cannot tell what it is, so it does not remove it.
+	dir := t.TempDir()
+	path := made(t, dir, now.Add(-time.Hour), true, 3)
+	db, err := sql.Open(DriverName, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER TABLE records RENAME TO entries`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	res, err := Sweep(dir, Policy{MaxAge: 7 * 24 * time.Hour, MaxTotalBytes: 1 << 30, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists(path) || !exists(lockOf(path)) || len(res.Kept) != 1 || res.Kept[0].State != "unreadable" {
+		t.Errorf("db %v, lock %v, result %+v; want both kept as unreadable", exists(path), exists(lockOf(path)), res)
+	}
+}
+
+func TestSweepRefusesAFolderTheDriverWouldMisread(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a name with \"?\" cannot be made on Windows")
+	}
+	src := made(t, t.TempDir(), now.Add(-time.Hour), true, 3)
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "a?b")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, filepath.Base(src))
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lockOf(path), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Sweep(dir, Policy{All: true, Now: now})
+	if err == nil || !strings.Contains(err.Error(), dir) {
+		t.Errorf("Sweep error = %v; want one that names the folder", err)
+	}
+	if len(res.Removed)+len(res.Kept)+len(res.Running) != 0 {
+		t.Errorf("result = %+v; want it empty", res)
+	}
+	if !exists(path) || !exists(lockOf(path)) {
+		t.Errorf("db exists %v, lock exists %v; want both left alone", exists(path), exists(lockOf(path)))
+	}
+}
+
+func TestSweepRemovesAZeroLengthDatabaseAndAnEmptyMetaDatabase(t *testing.T) {
+	dir := t.TempDir()
+	zero := filepath.Join(dir, DatabaseName(now.Add(-time.Hour), "00000001"))
+	garbage := filepath.Join(dir, DatabaseName(now.Add(-2*time.Hour), "00000002"))
+	noComplete := plainDatabase(t, dir, now.Add(-3*time.Hour), `CREATE TABLE meta (key TEXT, value TEXT)`, `INSERT INTO meta VALUES ('version', 'x')`)
+	noMeta := plainDatabase(t, dir, now.Add(-4*time.Hour), `CREATE TABLE x (a)`)
+	if err := os.WriteFile(zero, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(garbage, []byte(strings.Repeat("this is not a database ", 40)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{zero, garbage} {
+		if err := os.WriteFile(lockOf(p), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, err := Sweep(dir, Policy{MaxAge: 7 * 24 * time.Hour, MaxTotalBytes: 1 << 30, Now: now})
+	if err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+	for name, p := range map[string]string{"zero length": zero, "not a database": garbage, "no complete row": noComplete, "no meta table": noMeta} {
+		if exists(p) || exists(lockOf(p)) {
+			t.Errorf("%s: db exists %v, lock exists %v; want both removed", name, exists(p), exists(lockOf(p)))
+		}
+	}
+	if len(res.Removed) != 4 || len(res.Kept) != 0 {
+		t.Errorf("result = %+v; want four removed", res)
 	}
 }

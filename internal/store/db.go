@@ -21,6 +21,8 @@ import (
 	"github.com/ckir/aigolog/internal/buildinfo"
 	"github.com/ckir/aigolog/internal/record"
 	"github.com/ckir/aigolog/internal/timeparse"
+
+	sqlite "modernc.org/sqlite"
 )
 
 // How the times of a source were found (Source.TimeKind).
@@ -47,6 +49,14 @@ const (
 
 // ErrIncomplete is returned by Open for a database whose run did not finish.
 var ErrIncomplete = errors.New("the database is not complete: the run that made it did not finish")
+
+// ErrClosed is returned by the methods of a DB that read or write the database
+// after Close.
+var ErrClosed = errors.New("the database is closed")
+
+// errNoMeta marks an error that shows the file has no meta table: it is not a
+// database of aigolog.
+var errNoMeta = errors.New("the database has no meta table")
 
 // VersionError is returned by Open for a database written by another version
 // of aigolog.
@@ -89,7 +99,9 @@ type Options struct {
 
 // DB is the database of one analysis run. It holds one connection for its
 // whole life, so the settings made on it hold for every statement. It is not
-// safe for concurrent use.
+// safe for concurrent use. After Close, AddSource, Append, ResolveYears,
+// FinishSource, MarkComplete and Records return ErrClosed; Path, Size, Close
+// and Remove still work.
 type DB struct {
 	path     string
 	lockPath string
@@ -109,7 +121,7 @@ func Create(ctx context.Context, opt Options) (*DB, error) {
 	}
 	// The generated name never holds a character the driver misreads, so the
 	// folder is what to check, and before anything is made.
-	if err := checkDriverPath(filepath.Join(opt.Dir, DatabaseName(time.Time{}, "00000000"))); err != nil {
+	if err := checkDriverDir(opt.Dir); err != nil {
 		return nil, fmt.Errorf("making the folder of the databases: %w", err)
 	}
 	if err := os.MkdirAll(opt.Dir, 0o700); err != nil {
@@ -217,6 +229,20 @@ func checkDriverPath(path string) error {
 		return fmt.Errorf(`the database path %q starts with "file:", which the SQLite driver reads as a URI`, path)
 	}
 	return nil
+}
+
+// checkDriverDir refuses a folder in which the SQLite driver would misread the
+// path of a database (see checkDriverPath). The generated names of the
+// databases never hold such a character, so the folder is what to check. The
+// error names the folder.
+func checkDriverDir(dir string) error {
+	if checkDriverPath(filepath.Join(dir, DatabaseName(time.Time{}, "00000000"))) == nil {
+		return nil
+	}
+	if strings.Contains(dir, "?") {
+		return fmt.Errorf(`the folder of the databases %q contains "?", which the SQLite driver reads as the start of options`, dir)
+	}
+	return fmt.Errorf(`the folder of the databases %q starts with "file:", which the SQLite driver reads as a URI`, dir)
 }
 
 // connect opens the file at d.path and takes the one connection of d.
@@ -338,6 +364,11 @@ func openReadOnly(ctx context.Context, path string) (*DB, map[string]string, err
 func (d *DB) readMeta(ctx context.Context) (map[string]string, error) {
 	rows, err := d.conn.QueryContext(ctx, `SELECT key, value FROM meta`)
 	if err != nil {
+		// The driver gives no code for a missing table, only its text.
+		var se *sqlite.Error
+		if errors.As(err, &se) && strings.Contains(se.Error(), "no such table: meta") {
+			err = fmt.Errorf("%w: %w", errNoMeta, err)
+		}
 		return nil, fmt.Errorf("reading the meta rows of the database: %w", err)
 	}
 	defer rows.Close()
@@ -369,6 +400,9 @@ func (d *DB) Size() (int64, error) {
 
 // AddSource adds a source to the run and returns its number, from 1.
 func (d *DB) AddSource(ctx context.Context, s Source) (int, error) {
+	if d.conn == nil {
+		return 0, ErrClosed
+	}
 	res, err := d.conn.ExecContext(ctx,
 		`INSERT INTO sources (name, format, encoding, layout, time_kind, anchor_kind, anchor_nanos) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		s.Name, s.Format, s.Encoding, s.Layout, s.TimeKind, s.AnchorKind, s.AnchorNanos)
@@ -384,6 +418,9 @@ func (d *DB) AddSource(ctx context.Context, s Source) (int, error) {
 
 // Append adds records to the database, all or none.
 func (d *DB) Append(ctx context.Context, recs []record.Record) error {
+	if d.conn == nil {
+		return ErrClosed
+	}
 	tx, err := d.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("adding records: %w", err)
@@ -430,6 +467,9 @@ type pending struct {
 // from the last record to the first, in chunks, each written in one
 // transaction. A record for which no year fits is left as NoStamp.
 func (d *DB) ResolveYears(ctx context.Context, source int, r *timeparse.YearResolver) error {
+	if d.conn == nil {
+		return ErrClosed
+	}
 	cursor := int64(math.MaxInt64)
 	for {
 		chunk, err := d.pendingChunk(ctx, source, cursor)
@@ -508,6 +548,9 @@ func (d *DB) writeYears(ctx context.Context, chunk []pending, r *timeparse.YearR
 // FinishSource works out the totals of a source, stores them with lines and
 // bytes in the source's row, and returns them.
 func (d *DB) FinishSource(ctx context.Context, source int, lines, bytes int64) (SourceTotals, error) {
+	if d.conn == nil {
+		return SourceTotals{}, ErrClosed
+	}
 	tx, err := d.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return SourceTotals{}, fmt.Errorf("finishing a source: %w", err)
@@ -543,6 +586,9 @@ func (d *DB) FinishSource(ctx context.Context, source int, lines, bytes int64) (
 // MarkComplete records that the run finished, so that Open accepts the
 // database.
 func (d *DB) MarkComplete(ctx context.Context) error {
+	if d.conn == nil {
+		return ErrClosed
+	}
 	if _, err := d.conn.ExecContext(ctx, `UPDATE meta SET value = '1' WHERE key = 'complete'`); err != nil {
 		return fmt.Errorf("marking the database complete: %w", err)
 	}
@@ -553,6 +599,9 @@ func (d *DB) MarkComplete(ctx context.Context) error {
 // one at a time. If fn returns an error the walk stops and Records returns it.
 // fn must not use the database: the walk holds its connection.
 func (d *DB) Records(ctx context.Context, source int, fn func(id int64, r record.Record) error) error {
+	if d.conn == nil {
+		return ErrClosed
+	}
 	rows, err := d.conn.QueryContext(ctx,
 		`SELECT id, source, line, byte_offset, byte_length, t_state, t_nanos, t_exact, t_zone, t_month, t_day, t_tod, raw
 FROM records WHERE source = ? ORDER BY id`, source)
@@ -624,10 +673,13 @@ func (d *DB) Close() error {
 	return first
 }
 
-// Remove closes the database and deletes its files. The .db file and its
-// journal go while the lock is still held, then the lock is released and the
-// .lock file goes. A file that is already gone is not an error; Remove returns
-// the first other error.
+// Remove closes the database and deletes its files. For a database that
+// Create made and that has not been closed, the .db file and its journal go
+// while the lock is still held, then the lock is released and the .lock file
+// goes. For a closed database, or one that Open opened, the DB holds no lock,
+// so the files are deleted without one: the caller must know that no live run
+// holds them. A file that is already gone is not an error; Remove returns the
+// first other error.
 func (d *DB) Remove() error {
 	first := d.closeConn()
 	keep := func(err error) {
