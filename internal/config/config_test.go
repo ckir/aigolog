@@ -188,3 +188,25 @@ func TestAnEmptyFileAndADirectoryAreErrorsAndNullKeysAreLeftOut(t *testing.T) {
 		t.Errorf("null keys: got %+v, %v, want the defaults", got, err)
 	}
 }
+
+func TestAKeepDaysVariableWithSpacesAroundItIsTrimmed(t *testing.T) {
+	p := writeConfig(t, `{}`)
+	for _, c := range []struct {
+		val  string
+		want int
+	}{
+		{" 9 ", 9},
+		{"\t9\n", 9},
+		{"  36500 ", 36500},
+	} {
+		got, err := Load(env(map[string]string{"AIGOLOG_CONFIG": p, "AIGOLOG_KEEP_DAYS": c.val}))
+		if err != nil || got.KeepDays != c.want {
+			t.Errorf("AIGOLOG_KEEP_DAYS=%q: got %+v, %v, want KeepDays %d and no error", c.val, got, err, c.want)
+		}
+	}
+	// The trimmed value, not the raw one, is what is checked.
+	_, err := Load(env(map[string]string{"AIGOLOG_CONFIG": p, "AIGOLOG_KEEP_DAYS": " 36501 "}))
+	if err == nil || !strings.Contains(err.Error(), "AIGOLOG_KEEP_DAYS") {
+		t.Errorf("AIGOLOG_KEEP_DAYS=%q: err = %v, want a message that names AIGOLOG_KEEP_DAYS", " 36501 ", err)
+	}
+}
