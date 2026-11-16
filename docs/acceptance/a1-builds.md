@@ -2,6 +2,8 @@
 
 Date: 2026-11-16. Commit: `20ff2af`. Workflow run: [number 1](https://github.com/ckir/aigolog/actions/runs/43802284658) (run id 43802284658), on pull request 2. All three jobs succeeded.
 
+The same gate was run again after a later commit: workflow run [43805439247](https://github.com/ckir/aigolog/actions/runs/43805439247) on `4a1a60c` (the final head of the pull request) also succeeded on all three machines, with the same `aigolog version` lines. Between the two runs a run on `5cac83c` (43803169491) failed on all three machines, because `header.txt` had become the full licence text; the fix was `source-header.txt` (commit `4a1a60c`).
+
 | Target | Cross-built on ubuntu-24.04 by `just build` | Built, tested and run on its own kind of machine |
 |---|---|---|
 | linux/amd64 | yes | yes, ubuntu-24.04 |
