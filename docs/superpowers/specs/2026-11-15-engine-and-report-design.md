@@ -7,9 +7,10 @@ hosted Windows machines, with the owner's go-ahead, while the Windows virtual ma
 had chosen first was still starting; the owner then stopped that machine (section 8, A9). What
 was measured is in sections 7.1 and 9. The owner then ruled on the seven rules the measurements
 called for, after the second model and I had each recommended on them (section 7.1). The text
-added on 2026-11-16 then went through three rounds of the second model's review. The third was
-short, looked only for faults that would mislead a builder, and found none. The handoff files
-under `docs/handoff/` stay on hold.
+added on 2026-11-16 then went through the second model's review: three rounds on the rules, and
+one on the message-pattern measurements that came after. The last round of each was short,
+looked only for faults that would mislead a builder, and found none. The handoff files under
+`docs/handoff/` stay on hold.
 Date: 2026-11-15.
 
 This document describes the first of two parts of aigolog. It is written so that a builder can
