@@ -71,7 +71,7 @@ func parseAnalyzeArgs(env Env, args []string) (a analyzeArgs, code int, ok bool)
 	}
 	format := fs.String("format", "auto", "the format of the input: auto or text")
 	var asOf givenString
-	fs.Var(&asOf, "as-of", "the date that logs without a year are placed before: 2006-01-02, 2006-01-02 15:04 or 2006-01-02 15:04:05")
+	fs.Var(&asOf, "as-of", "the date that logs without a year are placed before: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS")
 	fs.BoolVar(&a.noKeep, "no-keep", false, "remove the database at the end of the run")
 
 	rest := args

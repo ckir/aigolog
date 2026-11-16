@@ -24,6 +24,11 @@ import (
 // Options.BatchSize does not say.
 const defaultBatch = 5000
 
+// maxBatchBytes is how much record text a batch may hold before it is
+// appended, whatever the number of records: records can be as long as
+// text.MaxRecordBytes, and a batch of defaultBatch of them would hold gigabytes.
+const maxBatchBytes = 8 << 20
+
 // Input is one thing to read.
 type Input struct {
 	// Name is how the input is called in reports: a path, or - for standard
@@ -173,15 +178,18 @@ func runInput(ctx context.Context, db *store.DB, in Input, o Options, zone *time
 	}
 
 	rec := first
+	batchBytes := 0
 	for {
 		rec.Source = id
 		batch = append(batch, rec)
-		if len(batch) == cap(batch) {
+		batchBytes += len(rec.Raw)
+		if len(batch) == cap(batch) || batchBytes >= maxBatchBytes {
 			if err := flush(ctx, db, batch); err != nil {
 				return SourceReport{}, rd.Lines(), err
 			}
 			clear(batch)
 			batch = batch[:0]
+			batchBytes = 0
 		}
 		rec, err = rd.Next()
 		if err == io.EOF {

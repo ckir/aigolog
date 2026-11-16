@@ -267,3 +267,59 @@ func TestRunCountsTheRecordsCutAtTheCap(t *testing.T) {
 		t.Errorf("records = %d for %d cuts", a.Totals.Records, a.CutRecords)
 	}
 }
+
+// longRecords produces a stamped line and then n bytes of indented lines, which
+// the reader cuts into records of about text.MaxRecordBytes, and samples the
+// heap every 8 MiB.
+type longRecords struct {
+	n, sent  int
+	started  bool
+	baseline uint64
+	peak     int64
+	samples  int
+}
+
+func (l *longRecords) Read(p []byte) (int, error) {
+	if !l.started {
+		l.started = true
+		return copy(p, "2026-01-05 10:00:01 start\n"), nil
+	}
+	if l.sent >= l.n {
+		return 0, io.EOF
+	}
+	const line = "  zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\n"
+	if before := l.sent / (8 << 20); (l.sent+len(line))/(8<<20) > before {
+		var m runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&m)
+		if grown := int64(m.HeapAlloc) - int64(l.baseline); grown > l.peak {
+			l.peak = grown
+		}
+		l.samples++
+	}
+	n := copy(p, line)
+	l.sent += len(line)
+	return n, nil
+}
+
+func TestMemoryStaysBoundedWhenRecordsAreAsLongAsTheCap(t *testing.T) {
+	d := newDB(t)
+	var m runtime.MemStats
+	runtime.GC()
+	runtime.GC()
+	runtime.ReadMemStats(&m)
+	l := &longRecords{n: 120 << 20, baseline: m.HeapAlloc}
+	res, err := Run(ctx, d, []Input{{Name: "long.log", R: l}}, Options{Now: time.Now(), Zone: time.UTC})
+	if err != nil || res.CutRecords < 100 {
+		t.Fatalf("cuts = %d, err = %v", res.CutRecords, err)
+	}
+	if l.samples < 10 {
+		t.Fatalf("the heap was sampled %d times", l.samples)
+	}
+	// Holding 5,000 records of 1 MiB would show as gigabytes; a batch of records
+	// that were not appended until the count was reached holds 120 MiB here.
+	if l.peak > 40<<20 {
+		t.Errorf("the heap grew by %d MiB during the run (%d samples)", l.peak>>20, l.samples)
+	}
+	t.Logf("peak growth %d bytes over %d samples", l.peak, l.samples)
+}

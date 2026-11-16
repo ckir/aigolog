@@ -333,6 +333,9 @@ func TestHelpFlagOfAnalyzePrintsUsageAndSucceeds(t *testing.T) {
 		if code != exitcode.OK || out != "" || !strings.Contains(errOut, "Usage: aigolog analyze") || !strings.Contains(errOut, "as-of") {
 			t.Errorf("%s: code %d, stdout %q, stderr %q", flagName, code, out, errOut)
 		}
+		if !strings.Contains(errOut, "YYYY-MM-DD") || strings.Contains(errOut, "2006") {
+			t.Errorf("%s: the help of --as-of must show the forms in words, not Go's reference date: %q", flagName, errOut)
+		}
 	}
 	if dbCount(t, h.cache) != 0 {
 		t.Error("a database was made")
