@@ -1,0 +1,39 @@
+count	provider	number	shape	message
+    48	docker	1	EventData:1-unnamed	message
+    12	Microsoft-Windows-WAS-ListenerAdapter	7003	EventData:1-named	message
+    12	docker	11	EventData:2-unnamed	message
+     8	Microsoft-Windows-Security-SPP	1034	EventData:2-unnamed	message
+     7	Microsoft-Windows-Security-SPP	16394	EventData:no-Data	message
+     7	Microsoft-Windows-Security-SPP	1003	EventData:2-unnamed	message
+     6	Microsoft-Windows-Security-SPP	16384	EventData:2-unnamed	message
+     5	Microsoft-Windows-Security-SPP	900	EventData:1-unnamed	message
+     3	WindowsAzureGuestAgent	0	EventData:1-unnamed	no-message
+     3	Microsoft-Windows-WMI	5617	EventData:no-Data	message
+     3	Microsoft-Windows-WMI	5615	EventData:no-Data	message
+     3	Microsoft-Windows-User Profiles Service	1532	EventData:no-Data	message
+     3	Microsoft-Windows-User Profiles Service	1531	EventData:no-Data	message
+     3	Microsoft-Windows-Security-SPP	902	EventData:1-unnamed	message
+     3	Microsoft-Windows-Security-SPP	1066	EventData:1-unnamed	message
+     3	Microsoft-Windows-Security-SPP	1033	EventData:3-unnamed	message
+     3	Microsoft-Windows-MSMQ	2028	EventData:no-Data	message
+     3	Microsoft-Windows-EventSystem	4625	EventData:3-named	message
+     3	Desktop Window Manager	9027	EventData:no-Data	message
+     2	Microsoft-Windows-Security-SPP	903	EventData:no-Data	message
+     2	Microsoft-Windows-Security-SPP	8230	EventData:1-unnamed	message
+     2	Microsoft-Windows-Security-SPP	8197	EventData:1-unnamed	message
+     2	Microsoft-Windows-Security-SPP	16388	EventData:2-unnamed	message
+     2	Microsoft-Windows-Security-SPP	1040	EventData:2-unnamed+Binary	message
+     2	Microsoft-Windows-MSDTC 2	4202	EventData:12-named	message
+     2	Microsoft-Windows-LoadPerf	1001	UserData	message
+     2	Microsoft-Windows-LoadPerf	1000	UserData	message
+     1	Microsoft-Windows-Security-SPP	12307	EventData:2-unnamed	message
+     1	Microsoft-Windows-Security-SPP	12289	EventData:1-unnamed+Binary	message
+     1	Microsoft-Windows-Security-SPP	12288	EventData:1-unnamed+Binary	message
+     1	Microsoft-Windows-Security-SPP	1024	EventData:no-Data+Binary	message
+     1	Microsoft-Windows-Security-SPP	1016	EventData:2-unnamed	message
+     1	Microsoft-Windows-Search-ProfileNotify	5	EventData:1-named+Binary	message
+     1	Microsoft-Windows-MSDTC	4111	EventData:no-Data+Binary	message
+     1	aigolog-probe-unregistered	4244	EventData:no-Data	no-message
+     1	aigolog-probe-unregistered	4243	EventData:1-unnamed	no-message
+     1	aigolog-probe-unregistered	4242	EventData:2-unnamed	no-message
+     1	aigolog-probe-eventcreate	999	EventData:1-unnamed	message

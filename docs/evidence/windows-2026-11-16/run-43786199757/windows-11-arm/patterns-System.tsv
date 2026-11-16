@@ -1,0 +1,128 @@
+events	provider	number	route	pattern (first 160 characters)	note
+    52	Microsoft-Windows-HttpService	112	provider data	Attempted to reserve URL %1. Status %2. Process Id %3 Executable path %4, User %5	
+    39	Microsoft-Windows-FilterManager	6	provider data	File System Filter '%5' (%2.%3, %6) has successfully loaded and registered with Filter Manager.	
+    17	Microsoft-Windows-Hyper-V-VmSwitch	291	provider data	RSC offload modified for NIC %1 (Friendly Name: %2) Previous IPv4: %3, Current IPv4: %5, Previous IPv6: %4, Current IPv6: %6. Reason: %7	
+    16	Microsoft-Windows-Hyper-V-VmSwitch	233	provider data	The operation '%5' succeeded on nic %2 (Friendly Name: %4), Instance Id %6.	
+    12	Service Control Manager	7040	message file	The start type of the %1 service was changed from %2 to %3.{U+000D}{U+000A}	C:\Windows\system32\services.exe
+    12	Microsoft-Windows-HttpService	113	provider data	Attempted to add URL (%2) to URL group (%1). Status: %3. Process Id %4 Executable path %5, User %6	
+    11	Microsoft-Windows-WindowsUpdateClient	44	provider data	Windows Update started downloading an update.	
+    11	Microsoft-Windows-Kernel-General	16	provider data	The access history in hive %2 was cleared updating %3 keys and creating %4 modified pages.	
+    10	Microsoft-Windows-Hyper-V-VmSwitch	292	provider data	RSC offload modified for Port %1 (Friendly Name: %2) Previous: %3, Current: %4. Reason: %5	
+    10	Microsoft-Windows-Hyper-V-VmSwitch	232	provider data	NIC %2 (Friendly Name: %4) successfully connected to port %6 (Friendly Name: %8) on switch %10(Friendly Name: %12).	
+     9	Microsoft-Windows-Kernel-General	24	provider data	The time zone information was refreshed with exit reason %1. Current time zone bias is %2.	
+     9	Microsoft-Windows-HttpService	114	provider data	Removed URL (%2) from URL group (%1). Process Id %3 Executable path %4, User %5	
+     7	Microsoft-Windows-Kernel-General	1	provider data	The system time has changed to %1 from %2.{U+000D}{U+000A}Time Delta: %3 ms{U+000D}{U+000A}{U+000D}{U+000A}Change Reason: %4.{U+000D}{U+000A}Process: '%5' (PID ...	
+     6	Service Control Manager	7031	message file	The %1 service terminated unexpectedly.  It has done this %2 time(s).  The following corrective action will be taken in %3 milliseconds: %5.{U+000D}{U+000A}	C:\Windows\system32\services.exe
+     6	Microsoft-Windows-Windows Firewall With Advanced Security	2042	provider data	Config Read Failed{U+000D}{U+000A}{U+000D}{U+000A}Config:{U+0009}%1{U+000D}{U+000A}Error:{U+0009}%2	
+     6	Microsoft-Windows-Kernel-Processor-Power	55	provider data	Processor %2 in group %1 exposes the following power management capabilities:{U+000D}{U+000A}{U+000D}{U+000A}Idle state type: %4 (%3 state(s)){U+000D}{U+000A}{U...	
+     6	Microsoft-Windows-Hyper-V-VmSwitch	71	provider data	Delete complete for port %2 (Friendly Name: %4).	
+     6	Microsoft-Windows-Hyper-V-VmSwitch	69	provider data	Port %2 (Friendly Name: %4) successfully deleted - switch %6 (Friendly Name: %8).	
+     6	Microsoft-Windows-Hyper-V-VmSwitch	234	provider data	NIC %2 successfully disconnected from port %4.	
+     6	Microsoft-Windows-Dhcp-Client	50036	provider data	DHCPv4 client service is started	
+     5	Microsoft-Windows-Ntfs	98	provider data	Volume %1 (%2) %3	
+     5	Microsoft-Windows-Hyper-V-VmSwitch	9	provider data	Switch %2 (Friendly Name: %4) successfully initialized.	
+     5	Microsoft-Windows-Hyper-V-VmSwitch	7	provider data	Miniport NIC %2 (Friendly Name: %4) successfully initialized.	
+     5	Microsoft-Windows-Hyper-V-VmSwitch	67	provider data	Port %2 (Friendly Name: %4) successfully created on switch %6 (Friendly Name: %8).	
+     5	Microsoft-Windows-Hyper-V-VmSwitch	264	provider data	Internal or External Port %2 (Friendly Name: %4) successfully created on switch %6 (Friendly Name: %8).	
+     5	Microsoft-Windows-Hyper-V-Netvsc	11	provider data	Miniport NIC '%2' restarted	
+     5	Microsoft-Windows-DistributedCOM	10016	provider data	The %1 permission settings do not grant %2 %3 permission for the COM Server application with CLSID {U+000D}{U+000A}%4{U+000D}{U+000A} and APPID {U+000D}{U+000A}...	
+     4	VfpExt	7036	message file	The %1 service entered the %2 state.{U+000D}{U+000A}	C:\Windows\system32\netevent.dll
+     4	Service Control Manager	7000	message file	The %1 service failed to start due to the following error: {U+000D}{U+000A}%2{U+000D}{U+000A}	C:\Windows\system32\services.exe
+     4	Microsoft-Windows-Time-Service	35	provider data	The time service is now synchronizing the system time with the time source %1 with reference id %2. Current local stratum number is %3.	
+     4	Microsoft-Windows-Hyper-V-Netvsc	51	provider data	Failed NetVsc VF association with VfSerialNumber (%2) FailureReason (%3) Status (%1)	
+     4	Microsoft-Windows-HttpEvent	15008	message file	Reservation for namespace identified by URL prefix %2 was successfully deleted.{U+000D}{U+000A}	C:\Windows\system32\drivers\http.sys
+     4	Microsoft-Windows-HttpEvent	15007	message file	Reservation for namespace identified by URL prefix %2 was successfully added.{U+000D}{U+000A}	C:\Windows\system32\drivers\http.sys
+     4	Microsoft-Windows-DHCPv6-Client	51057	provider data	DHCPv6 client service stop is almost done.DHCP Context Ref count is %1	
+     3	Service Control Manager	7045	message file	A service was installed in the system.{U+000D}{U+000A}{U+000D}{U+000A}Service Name:  %1{U+000D}{U+000A}Service File Name:  %2{U+000D}{U+000A}Service Type:  %3{U...	C:\Windows\system32\services.exe
+     3	Service Control Manager	7026	message file	The following boot-start or system-start driver(s) did not load: %1{U+000D}{U+000A}	C:\Windows\system32\services.exe
+     3	Service Control Manager	7023	message file	The %1 service terminated with the following error: {U+000D}{U+000A}%2{U+000D}{U+000A}	C:\Windows\system32\services.exe
+     3	mlx5	379	message file	%2: Zero Touch RoCE: Some of the required capabilities are not supported by FW.{U+000D}{U+000A}{U+000D}{U+000A}Requested: SlowRestart = %3, TxWindow = %4, AdpRe...	C:\Windows\System32\drivers\mlx5.sys
+     3	mlx5	290	message file	%2 Traffic flow is in running state.{U+000D}{U+000A}	C:\Windows\System32\drivers\mlx5.sys
+     3	mlx5	289	message file	%2 Traffic flow is in restarting state.{U+000D}{U+000A}	C:\Windows\System32\drivers\mlx5.sys
+     3	mlx5	286	message file	%2: is currently running:{U+000D}{U+000A}{U+000D}{U+000A}    GUID:                 {U+0009}%3{U+000D}{U+000A}{U+000D}{U+000A}    MAC:                  {U+0009}%...	C:\Windows\System32\drivers\mlx5.sys
+     3	mlx5	285	message file	%2: is currently running:{U+000D}{U+000A}{U+000D}{U+000A}    Driver Version:       {U+0009}%3{U+000D}{U+000A}{U+000D}{U+000A}    Firmware Version:     {U+0009}%...	C:\Windows\System32\drivers\mlx5.sys
+     3	mlx5	262	message file	%2 has got:{U+000D}{U+000A}{U+000D}{U+000A}   vendor_id      {U+0009}%3{U+000D}{U+000A}{U+000D}{U+000A}   device_id      {U+0009}%4{U+000D}{U+000A}{U+000D}{U+00...	C:\Windows\System32\drivers\mlx5.sys
+     3	mlx5	13	message file	%2 device detects that the link is up, and has initiated a normal operation.{U+000D}{U+000A}	C:\Windows\System32\drivers\mlx5.sys
+     3	Microsoft-Windows-WinRM	10148	none		provider data lists 210 kinds, not this one; no message file in the registry
+     3	Microsoft-Windows-Hyper-V-VmSwitch	62	provider data	Switch %2 (Friendly Name: %4) successfully deleted.	
+     3	Microsoft-Windows-Hyper-V-Netvsc	54	provider data	Successfully NetVsc (%4) send VmBus Packet to Host for Data Path Switch with VM Active (%2) VfAdapter (%6) VfSerialNumber (%1)	
+     3	Microsoft-Windows-Hyper-V-Netvsc	52	provider data	Successfully NetVsc (%3) VF association with VfSerialNumber (%1)	
+     3	Microsoft-Windows-Hyper-V-Netvsc	50	provider data	Successfully bind NetVsc to VfAdapter (%5) with VfSerialNumber (%1) LowestIfIndex (%2) NdkState (%3)	
+     3	Microsoft-Windows-Hyper-V-Netvsc	46	provider data	VF adapter '%2' did not report NDK capabilities.	
+     3	Microsoft-Windows-Hyper-V-Netvsc	10	provider data	Miniport NIC '%2' paused	
+     3	Microsoft-Windows-FilterManager	1	provider data	File System Filter '%5' (Version %2.%3, %6) unloaded successfully.	
+     3	Microsoft-Windows-Directory-Services-SAM	16977	provider data	The domain is configured with the following minimum password length-related settings.{U+000D}{U+000A}{U+000D}{U+000A}MinimumPasswordLength: %1{U+000D}{U+000A}{U...	
+     3	Microsoft-Windows-DHCPv6-Client	51046	provider data	DHCPv6 client service is started	
+     3	Microsoft-Windows-Dhcp-Client	50103	provider data	DHCPv4 client registered for shutdown notification	
+     2	User32	1074	message file	The process %1 has initiated the %5 of computer %2 on behalf of user %7 for the following reason: %3{U+000D}{U+000A} Reason Code: %4{U+000D}{U+000A} Shutdown Ty...	C:\Windows\system32\user32.dll
+     2	Service Control Manager	7034	message file	The %1 service terminated unexpectedly.  It has done this %2 time(s).{U+000D}{U+000A}	C:\Windows\system32\services.exe
+     2	Microsoft-Windows-WinRM	10149	none		provider data lists 210 kinds, not this one; no message file in the registry
+     2	Microsoft-Windows-Wininit	25	provider data	Boot App Anti-Rollback: Previous timer resumed with status:{U+000D}{U+000A}{U+000D}{U+000A}HRESULT: %1{U+000D}{U+000A}Previous timer present: %2{U+000D}{U+000A}...	
+     2	Microsoft-Windows-Wininit	24	provider data	Boot App Anti-Rollback: Timer start completed with status:{U+000D}{U+000A}{U+000D}{U+000A}Win32Error: %1{U+000D}{U+000A}Start time: %2{U+000D}{U+000A}Grace peri...	
+     2	Microsoft-Windows-Wininit	23	provider data	Boot App Anti-Rollback: Initialize Completed with status:{U+000D}{U+000A}HRESULT: %1{U+000D}{U+000A}New timer needed: %2{U+000D}{U+000A}New timer waiting for sy...	
+     2	Microsoft-Windows-Wininit	19	provider data	Virtualization Based Security new timer creation status{U+000D}{U+000A}{U+000D}{U+000A}HRESULT: %1{U+000D}{U+000A}New latch timer needed: %2{U+000D}{U+000A}New ...	
+     2	Microsoft-Windows-Wininit	14	provider data	Credential Guard configuration:{U+000D}{U+000A}{U+000D}{U+000A}Registry Configuration: %1{U+000D}{U+000A}Test Configuration: %2{U+000D}{U+000A}Auto Enablement: ...	
+     2	Microsoft-Windows-Wininit	12	provider data	LSASS.exe was started as a protected process with level: %1.	
+     2	Microsoft-Windows-Time-Service	37	provider data	The time provider NtpClient is currently receiving valid time data from %1.	
+     2	Microsoft-Windows-Time-Service	134	provider data	NtpClient was unable to set a manual peer to use as a time source because of DNS resolution error on '%3'. NtpClient will try again in %2 minutes and double the...	
+     2	Microsoft-Windows-Kernel-Power	577	provider data	The system has prepared for a system initiated reboot from %1.	
+     2	Microsoft-Windows-Kernel-Power	172	provider data	Connectivity state in standby: %1, Reason: %2	
+     2	Microsoft-Windows-Kernel-Power	109	provider data	The kernel power manager has initiated a shutdown transition.{U+000D}{U+000A}{U+000D}{U+000A}Action: %1 {U+000D}{U+000A}Event Code: %2 {U+000D}{U+000A}Reason: %...	
+     2	Microsoft-Windows-Kernel-PnP	219	provider data	The driver %5 failed to load.{U+000D}{U+000A}Device: %2{U+000D}{U+000A}Status: %3	
+     2	Microsoft-Windows-Kernel-General	25	provider data	The system time was initialized to %1. {U+000D}{U+000A}{U+000D}{U+000A}Loader time: %2{U+000D}{U+000A}Internal boot flags: %3{U+000D}{U+000A}HAL RTC error code:...	
+     2	Microsoft-Windows-Kernel-General	20	provider data	The leap second configuration has been updated.{U+000D}{U+000A}Reason: %1{U+000D}{U+000A}Leap seconds enabled: %2{U+000D}{U+000A}New leap second count: %3{U+000...	
+     2	Microsoft-Windows-Kernel-General	13	provider data	The operating system is shutting down at system time %1.	
+     2	Microsoft-Windows-Kernel-General	12	provider data	The operating system started at system time %7.	
+     2	Microsoft-Windows-Kernel-Boot	32	provider data	The bootmgr spent %1 ms waiting for user input.	
+     2	Microsoft-Windows-Kernel-Boot	27	provider data	The boot type was %1.	
+     2	Microsoft-Windows-Kernel-Boot	25	provider data	The boot menu policy was %1.	
+     2	Microsoft-Windows-Kernel-Boot	238	provider data	EFI time zone bias: %1. Daylight flags: %2. Firmware time: %3.	
+     2	Microsoft-Windows-Kernel-Boot	20	provider data	The last shutdown's success status was %1. The last boot's success status was %2.	
+     2	Microsoft-Windows-Kernel-Boot	18	provider data	There are %1 boot options on this system.	
+     2	Microsoft-Windows-IsolatedUserMode	5	provider data	Secure Trustlet %4 Id %1 and Pid %2 started with status %3.	
+     2	Microsoft-Windows-Hyper-V-VmSwitch	5	provider data	Miniport NIC %2 (Friendly Name: %4) successfully enabled	
+     2	Microsoft-Windows-Hyper-V-VmSwitch	277	provider data	vmswitch.sys build %1.%2.%3, debug %4, official %5, %6 %7	
+     2	Microsoft-Windows-Hyper-V-Netvsc	59	provider data	Successfully sent status indication for VF adapter %1 (Serial number: %2) VF associated=%3, Datapath active=%4, VF MAC address: %5	
+     2	Microsoft-Windows-Hyper-V-Netvsc	3	provider data	The miniport '%2' was successfully initialized	
+     2	Microsoft-Windows-Hyper-V-Netvsc	1	provider data	The VM and host networking components successfully negotiated protocol version '%2'	
+     2	Microsoft-Windows-Hyper-V-Hypervisor	43	provider data	Hypervisor launch failed; EL2 not present.	
+     2	Microsoft-Windows-HAL	16	provider data	IOMMU fault reporting has been initialized.	
+     2	Microsoft-Windows-Directory-Services-SAM	16983	provider data	The security account manager is now logging periodic summary events for remote clients that call legacy password change or set RPC methods.{U+000D}{U+000A}{U+00...	
+     2	Microsoft-Windows-Directory-Services-SAM	16962	provider data	Remote calls to the SAM database are being restricted using the default security descriptor: %1.{U+000D}{U+000A}For more information please see http://go.micros...	
+     2	Microsoft-Windows-DHCPv6-Client	51047	provider data	DHCPv6 client service is stopped. ShutDown Flag value is %1	
+     2	Microsoft-Windows-Dhcp-Client	50106	provider data	DHCPv4 is waiting on DHCPv6 service to stop	
+     2	Microsoft-Windows-Dhcp-Client	50105	provider data	DHCPv4 client ProcessDHCPRequestForever received TERMINATE_EVENT	
+     2	Microsoft-Windows-Dhcp-Client	50104	provider data	DHCPv4 client received shutdown notification	
+     2	Microsoft-Windows-Dhcp-Client	50037	provider data	DHCPv4 client service is stopped. ShutDown Flag value is %1	
+     2	LsaSrv	6156	provider data	Credential Guard auto enablement status.{U+000D}{U+000A}{U+000D}{U+000A}Hardware Requirements for Virtualization Based Security:{U+0009}%1{U+000D}{U+000A}Domain...	
+     2	EventLog	6013	message file	The system uptime is %5 seconds.{U+000D}{U+000A}	C:\Windows\System32\netevent.dll
+     2	EventLog	6009	message file	Microsoft (R) Windows (R) %1 %2 %3 %4.{U+000D}{U+000A}	C:\Windows\System32\netevent.dll
+     2	EventLog	6006	message file	The Event log service was stopped.{U+000D}{U+000A}	C:\Windows\System32\netevent.dll
+     2	EventLog	6005	message file	The Event log service was started.{U+000D}{U+000A}	C:\Windows\System32\netevent.dll
+     1	volmgr	46	message file	Crash dump initialization failed!{U+000D}{U+000A}	C:\Windows\System32\IoLogMsg.dll
+     1	Virtual Disk Service	4	message file	Service stopped.{U+000D}{U+000A}	C:\Windows\System32\vds.exe
+     1	Virtual Disk Service	3	message file	Service started.{U+000D}{U+000A}	C:\Windows\System32\vds.exe
+     1	Service Control Manager	7009	message file	A timeout was reached (%1 milliseconds) while waiting for the %2 service to connect.{U+000D}{U+000A}	C:\Windows\system32\services.exe
+     1	Microsoft-Windows-Winlogon	7001	provider data	User Logon Notification for Customer Experience Improvement Program	
+     1	Microsoft-Windows-Wininit	18	provider data	VBS Key Isolation was started and will protect VSM-isolated keys.	
+     1	Microsoft-Windows-Wininit	15	provider data	Credential Guard and/or VBS Key Isolation are configured but the secure kernel is not running; continuing without them.	
+     1	Microsoft-Windows-Wininit	13	provider data	Credential Guard was started and will protect LSA credentials.	
+     1	Microsoft-Windows-WindowsUpdateClient	43	provider data	Installation Started: Windows has started installing the following update: %1	
+     1	Microsoft-Windows-WindowsUpdateClient	19	provider data	Installation Successful: Windows successfully installed the following update: %1	
+     1	Microsoft-Windows-UserModePowerService	22	provider data	Reapply power settings upon completion of the provisioning engine's turn %1	
+     1	Microsoft-Windows-Time-Service	137	provider data	NtpClient succeeds in resolving manual peer %1 after a previous failure.	
+     1	Microsoft-Windows-TerminalServices-RemoteConnectionManager	1056	message file	A new self signed certificate to be used for RD Session Host Server authentication on SSL connections was generated. The name on this certificate is %1. The SHA...	C:\Windows\system32\termsrv.dll
+     1	Microsoft-Windows-Setup	2004	provider data	Successfully logged OS information	
+     1	Microsoft-Windows-Kernel-General	22	provider data	The time zone bias has changed to %1 from %2.	
+     1	Microsoft-Windows-Kernel-Boot	156	provider data	Virtualization-based security (policies: %3) is %2 with status: %1	
+     1	Microsoft-Windows-Kernel-Boot	153	provider data	Virtualization-based security (policies: %3) is %2.	
+     1	Microsoft-Windows-Kernel-Boot	124	provider data	The virtualization-based security enablement policy check at phase %1 failed with status: %2	
+     1	Microsoft-Windows-IsolatedUserMode	3	provider data	Secure Kernel started with status %1 and flags %2.	
+     1	Microsoft-Windows-IsolatedUserMode	1	provider data	Secure Trustlet %4 Id %1 and Pid %2 started with status %3.	
+     1	Microsoft-Windows-Hyper-V-Netvsc	13	provider data	Miniport NIC '%2' disconnected	
+     1	Microsoft-Windows-Hyper-V-Netvsc	12	provider data	Miniport NIC '%2' connected	
+     1	Microsoft-Windows-HttpService	120	provider data	SSL Certificate Settings created by an admin process for endpoint : %1. Status %2. Process Id %3 Executable path %4, User %5	
+     1	Microsoft-Windows-HttpService	119	provider data	SSL Certificate Settings deleted for endpoint : %1. Status %2. Process Id %3 Executable path %4, User %5	
+     1	Microsoft-Windows-HttpEvent	15301	message file	SSL Certificate Settings created by an admin process for endpoint : %2 .{U+000D}{U+000A}	C:\Windows\system32\drivers\http.sys
+     1	Microsoft-Windows-HttpEvent	15300	message file	SSL Certificate Settings deleted for endpoint : %2 .{U+000D}{U+000A}	C:\Windows\system32\drivers\http.sys
+     1	Microsoft-Windows-GroupPolicy	1501	provider data	The Group Policy settings for the user were processed successfully. There were no changes detected since the last successful processing of Group Policy.	

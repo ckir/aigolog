@@ -1,0 +1,1526 @@
+aigolog Windows Event Log probe. Started (UTC, less 5 s): 2026-11-15T23:36:27.000Z
+Capture folder: D:\a\_temp\capture
+
+==================== SECTION: prepare ====================
+Compiled the small native-call helper.
+==================== END: prepare (0.7 s) ====================
+
+==================== SECTION: 1 the machine ====================
+
+--- operating system ---
+OS: Microsoft Windows Server 2025 Datacenter | version 10.0.26100 | build 26100 | 64-bit
+Processor architecture: AMD64; 64-bit process: True
+PowerShell: 5.1.26100.33648 (CLR 4.0.30319.42000)
+Culture: en-US; OEM code page 437; ANSI code page 1252
+
+--- who is running this ---
+Running as: runnervmm7ud1\runneradmin; holds the Administrators role: True; session 2
+UAC registry setting EnableLUA: 1 (0 means UAC is off)
+COMMAND: whoami.exe /groups
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 2240 bytes, plain ASCII (no byte above 0x7F)
+
+GROUP INFORMATION
+-----------------
+
+Group Name                                                    Type             SID          Attributes                                                     
+============================================================= ================ ============ ===============================================================
+Everyone                                                      Well-known group S-1-1-0      Mandatory group, Enabled by default, Enabled group             
+NT AUTHORITY\Local account and member of Administrators group Well-known group S-1-5-114    Mandatory group, Enabled by default, Enabled group             
+BUILTIN\Administrators                                        Alias            S-1-5-32-544 Mandatory group, Enabled by default, Enabled group, Group owner
+BUILTIN\Users                                                 Alias            S-1-5-32-545 Mandatory group, Enabled by default, Enabled group             
+NT AUTHORITY\INTERACTIVE                                      Well-known group S-1-5-4      Mandatory group, Enabled by default, Enabled group             
+CONSOLE LOGON                                                 Well-known group S-1-2-1      Mandatory group, Enabled by default, Enabled group             
+NT AUTHORITY\Authenticated Users                              Well-known group S-1-5-11     Mandatory group, Enabled by default, Enabled group             
+NT AUTHORITY\This Organization                                Well-known group S-1-5-15     Mandatory group, Enabled by default, Enabled group             
+NT AUTHORITY\Local account                                    Well-known group S-1-5-113    Mandatory group, Enabled by default, Enabled group             
+LOCAL                                                         Well-known group S-1-2-0      Mandatory group, Enabled by default, Enabled group             
+NT AUTHORITY\NTLM Authentication                              Well-known group S-1-5-64-10  Mandatory group, Enabled by default, Enabled group             
+Mandatory Label\High Mandatory Level                          Label            S-1-16-12288
+
+--- build tools on the path ---
+TOOL go -> C:\hostedtoolcache\windows\go\1.24.13\x64\bin\go.exe
+TOOL git -> C:\Program Files\Git\bin\git.exe
+TOOL gcc -> C:\mingw64\bin\gcc.exe
+TOOL clang -> C:\Program Files\LLVM\bin\clang.exe
+TOOL cl -> not on the path
+TOOL zig -> not on the path
+COMMAND: C:\hostedtoolcache\windows\go\1.24.13\x64\bin\go.exe version
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 35 bytes, plain ASCII (no byte above 0x7F)
+go version go1.24.13 windows/amd64
+COMMAND: C:\hostedtoolcache\windows\go\1.24.13\x64\bin\go.exe env GOOS GOARCH CGO_ENABLED CC
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 20 bytes, plain ASCII (no byte above 0x7F)
+windows
+amd64
+1
+gcc
+COMMAND: C:\mingw64\bin\gcc.exe --version
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 277 bytes, plain ASCII (no byte above 0x7F)
+gcc.exe (x86_64-posix-seh-rev1, Built by MinGW-Builds project) 15.2.0
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+COMMAND: C:\Program Files\Git\bin\git.exe --version
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 29 bytes, plain ASCII (no byte above 0x7F)
+git version 2.56.0.windows.4
+
+--- which accounts may log on, and how (user rights of this machine) ---
+COMMAND: secedit.exe /export /cfg "D:\a\_temp\user-rights.inf" /areas USER_RIGHTS
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 175 bytes, plain ASCII (no byte above 0x7F)
+(content not shown; its first 80 characters:                                                                            
+The)
+Logon rights (S-1-5-32-544 Administrators, S-1-5-32-545 Users, S-1-5-32-551 Backup Operators, S-1-1-0 Everyone):
+  SeNetworkLogonRight = *S-1-1-0,*S-1-5-32-544,*S-1-5-32-545,*S-1-5-32-551
+  SeBatchLogonRight = *S-1-5-32-544,*S-1-5-32-551,*S-1-5-32-559,*S-1-5-32-568
+  SeServiceLogonRight = *S-1-5-80-0,*S-1-5-82-271721585-897601226-2024613209-625570482-296978595,*S-1-5-82-3876422241-1344743610-1729199087-774402673-2621913236,*S-1-5-83-0,*S-1-5-99-0
+  SeInteractiveLogonRight = *S-1-5-32-544,*S-1-5-32-545,*S-1-5-32-551
+  SeRemoteInteractiveLogonRight = *S-1-5-32-544,*S-1-5-32-555
+
+--- the event log tool and the three logs ---
+COMMAND: wevtutil.exe el
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 55888 bytes, plain ASCII (no byte above 0x7F)
+(content not shown; its first 80 characters: AMSI/Debug
+Analytic
+Application
+Camera_FSAnalytic
+DirectShowFilterGraph
+Dir)
+Channels listed by 'wevtutil el': 1262
+COMMAND: wevtutil.exe gl Application
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 541 bytes, plain ASCII (no byte above 0x7F)
+name: Application
+enabled: true
+type: Admin
+owningPublisher: 
+isolation: Application
+channelAccess: O:BAG:SYD:(A;;0x2;;;S-1-15-2-1)(A;;0x2;;;S-1-15-3-1024-3153509613-960666767-3724611135-2725662640-12138253-543910227-1950414635-4190290187)(A;;0xf0007;;;SY)(A;;0x7;;;BA)(A;;0x7;;;SO)(A;;0x3;;;IU)(A;;0x3;;;SU)(A;;0x3;;;S-1-5-3)(A;;0x3;;;S-1-5-33)(A;;0x1;;;S-1-5-32-573)
+logging:
+  logFileName: %SystemRoot%\System32\Winevt\Logs\Application.evtx
+  retention: false
+  autoBackup: false
+  maxSize: 20971520
+publishing:
+  fileMax: 1
+COMMAND: wevtutil.exe gli Application
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 218 bytes, plain ASCII (no byte above 0x7F)
+creationTime: 2026-10-25T00:13:03.9800307Z
+lastAccessTime: 2026-11-15T23:36:04.3047961Z
+lastWriteTime: 2026-11-15T23:36:04.3047961Z
+fileSize: 1118208
+attributes: 32
+numberOfLogRecords: 171
+oldestRecordNumber: 1
+COMMAND: wevtutil.exe gl System
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 410 bytes, plain ASCII (no byte above 0x7F)
+name: System
+enabled: true
+type: Admin
+owningPublisher: 
+isolation: System
+channelAccess: O:BAG:SYD:(A;;0xf0007;;;SY)(A;;0x7;;;BA)(A;;0x3;;;BO)(A;;0x5;;;SO)(A;;0x1;;;IU)(A;;0x3;;;SU)(A;;0x1;;;S-1-5-3)(A;;0x2;;;S-1-5-33)(A;;0x1;;;S-1-5-32-573)
+logging:
+  logFileName: %SystemRoot%\System32\Winevt\Logs\System.evtx
+  retention: false
+  autoBackup: false
+  maxSize: 20971520
+publishing:
+  fileMax: 1
+COMMAND: wevtutil.exe gli System
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 219 bytes, plain ASCII (no byte above 0x7F)
+creationTime: 2026-10-25T00:13:03.9701871Z
+lastAccessTime: 2026-11-15T23:36:04.3027724Z
+lastWriteTime: 2026-11-15T23:36:04.3027724Z
+fileSize: 1118208
+attributes: 32
+numberOfLogRecords: 1106
+oldestRecordNumber: 1
+COMMAND: wevtutil.exe gl Security
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 325 bytes, plain ASCII (no byte above 0x7F)
+name: Security
+enabled: true
+type: Admin
+owningPublisher: 
+isolation: Custom
+channelAccess: O:BAG:SYD:(A;;0xf0005;;;SY)(A;;0x5;;;BA)(A;;0x1;;;S-1-5-32-573)
+logging:
+  logFileName: %SystemRoot%\System32\Winevt\Logs\Security.evtx
+  retention: false
+  autoBackup: false
+  maxSize: 20971520
+publishing:
+  fileMax: 1
+COMMAND: wevtutil.exe gli Security
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 221 bytes, plain ASCII (no byte above 0x7F)
+creationTime: 2026-10-25T00:13:03.9820494Z
+lastAccessTime: 2026-11-15T23:36:37.1851105Z
+lastWriteTime: 2026-11-15T23:36:37.1851105Z
+fileSize: 13701120
+attributes: 32
+numberOfLogRecords: 14874
+oldestRecordNumber: 1
+
+--- what this machine audits before the probe changes anything ---
+COMMAND: auditpol.exe /get /category:*
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 3601 bytes, plain ASCII (no byte above 0x7F)
+System audit policy
+Category/Subcategory                      Setting
+System
+  Security System Extension               Success
+  System Integrity                        Success and Failure
+  IPsec Driver                            No Auditing
+  Other System Events                     Success and Failure
+  Security State Change                   Success
+Logon/Logoff
+  Logon                                   Success and Failure
+  Logoff                                  Success
+  Account Lockout                         Success and Failure
+  IPsec Main Mode                         No Auditing
+  IPsec Quick Mode                        No Auditing
+  IPsec Extended Mode                     No Auditing
+  Special Logon                           Success
+  Other Logon/Logoff Events               Success and Failure
+  Network Policy Server                   Success and Failure
+  User / Device Claims                    No Auditing
+  Group Membership                        Success
+  Access Rights                           No Auditing
+Object Access
+  File System                             No Auditing
+  Registry                                No Auditing
+  Kernel Object                           No Auditing
+  SAM                                     No Auditing
+  Certification Services                  No Auditing
+  Application Generated                   No Auditing
+  Handle Manipulation                     No Auditing
+  File Share                              No Auditing
+  Filtering Platform Packet Drop          No Auditing
+  Filtering Platform Connection           No Auditing
+  Other Object Access Events              Success and Failure
+  Detailed File Share                     No Auditing
+  Removable Storage                       Success and Failure
+  Central Policy Staging                  No Auditing
+Privilege Use
+  Non Sensitive Privilege Use             No Auditing
+  Other Privilege Use Events              No Auditing
+  Sensitive Privilege Use                 Success and Failure
+Detailed Tracking
+  Process Creation                        Success
+  Process Termination                     No Auditing
+  DPAPI Activity                          No Auditing
+  RPC Events                              No Auditing
+  Plug and Play Events                    Success
+  Token Right Adjusted Events             No Auditing
+Policy Change
+  Audit Policy Change                     Success
+  Authentication Policy Change            Success
+  Authorization Policy Change             No Auditing
+  MPSSVC Rule-Level Policy Change         Success and Failure
+  Filtering Platform Policy Change        No Auditing
+  Other Policy Change Events              No Auditing
+Account Management
+  Computer Account Management             Success
+  Security Group Management               Success
+  Distribution Group Management           No Auditing
+  Application Group Management            No Auditing
+  Other Account Management Events         Success
+  User Account Management                 Success and Failure
+DS Access
+  Directory Service Access                Success
+  Directory Service Changes               No Auditing
+  Directory Service Replication           No Auditing
+  Detailed Directory Service Replication  No Auditing
+Account Logon
+  Kerberos Service Ticket Operations      Success
+  Other Account Logon Events              No Auditing
+  Kerberos Authentication Service         Success
+  Credential Validation                   Success and Failure
+==================== END: 1 the machine (3.4 s) ====================
+
+==================== SECTION: 2 failed logons ====================
+
+--- turn on auditing of logons (success and failure) ---
+COMMAND: auditpol.exe /set /subcategory:{0CCE9215-69AE-11D9-BED3-505054503030} /success:enable /failure:enable
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 41 bytes, plain ASCII (no byte above 0x7F)
+The command was successfully executed.
+COMMAND: auditpol.exe /get /subcategory:{0CCE9215-69AE-11D9-BED3-505054503030}
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 151 bytes, plain ASCII (no byte above 0x7F)
+System audit policy
+Category/Subcategory                      Setting
+Logon/Logoff
+  Logon                                   Success and Failure
+
+--- create the standard test account ---
+Created the local account aigoprobe with New-LocalUser (password not shown).
+Added it to the Users group (so it was not a member straight after creation).
+The account as Windows now describes it (look at "Local Group Memberships"):
+COMMAND: net.exe user aigoprobe
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 841 bytes, plain ASCII (no byte above 0x7F)
+User name                    aigoprobe
+Full Name                    
+Comment                      aigolog probe, standard user
+User's comment               
+Country/region code          000 (System Default)
+Account active               Yes
+Account expires              Never
+
+Password last set            11/15/2026 11:36:38 PM
+Password expires             Never
+Password changeable          11/15/2026 11:36:38 PM
+Password required            No
+User may change password     Yes
+
+Workstations allowed         All
+Logon script                 
+User profile                 
+Home directory               
+Last logon                   Never
+
+Logon hours allowed          All
+
+Local Group Memberships      *Users                
+Global Group memberships     *None                 
+The command completed successfully.
+
+--- make failed logons, then one good one ---
+LogonUser name=probe-ghost-a logon type=3 wrong password -> Windows error 1326
+LogonUser name=probe-ghost-a logon type=3 wrong password -> Windows error 1326
+LogonUser name=probe-ghost-a logon type=3 wrong password -> Windows error 1326
+LogonUser name=probe-ghost-a logon type=3 wrong password -> Windows error 1326
+LogonUser name=probe-ghost-a logon type=3 wrong password -> Windows error 1326
+LogonUser name=probe-ghost-a logon type=3 wrong password -> Windows error 1326
+LogonUser name=probe-ghost-b logon type=3 wrong password -> Windows error 1326
+LogonUser name=probe-ghost-b logon type=3 wrong password -> Windows error 1326
+LogonUser name=probe-ghost-b logon type=3 wrong password -> Windows error 1326
+LogonUser name=probe-ghost-b logon type=2 wrong password -> Windows error 1326
+LogonUser name=aigoprobe logon type=3 wrong password -> Windows error 1326
+LogonUser name=aigoprobe logon type=3 wrong password -> Windows error 1326
+LogonUser name=aigoprobe logon type=2 wrong password -> Windows error 1326
+LogonUser name=aigoprobe logon type=2 wrong password -> Windows error 1326
+Failed logons the probe made: 14
+LogonUser name=aigoprobe logon type=3 right password -> Windows error 0
+
+--- read the failed logons back (event 4625) ---
+QUERY on Security: *[System[(EventID=4625) and TimeCreated[@SystemTime >= '2026-11-15T23:36:27.000Z']]]
+Events 4625 since the probe started: 14. Of those, for the probe's own test names: 14. The probe made 14 failed logons.
+Only the probe's own are shown and saved.
+
+EVENT provider='Microsoft-Windows-Security-Auditing' number=4625 record=583313 level=0 shape=EventData:21-named record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4625</EventID><Version>0</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8010000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:36:38.4224710Z'/><EventRecordID>583313</EventRecordID><Correlation ActivityID='{55e49c9e-16b0-0002-6c2c-63b25975dd01}'/><Execution ProcessID='992' ThreadID='496'/><Channel>Security</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-3289802278-1561746829-1498425070-500</Data><Data Name='SubjectUserName'>runneradmin</Data><Data Name='SubjectDomainName'>runnervmm7ud1</Data><Data Name='SubjectLogonId'>0xd3ca9</Data><Data Name='TargetUserSid'>S-1-0-0</Data><Data Name='TargetUserName'>aigoprobe</Data><Data Name='TargetDomainName'>runnervmm7ud1</Data><Data Name='Status'>0xc000006d</Data><Data Name='FailureReason'>%%2313</Data><Data Name='SubStatus'>0xc000006a</Data><Data Name='LogonType'>2</Data><Data Name='LogonProcessName'>Advapi  </Data><Data Name='AuthenticationPackageName'>Negotiate</Data><Data Name='WorkstationName'>runnervmm7ud1</Data><Data Name='TransmittedServices'>-</Data><Data Name='LmPackageName'>-</Data><Data Name='KeyLength'>0</Data><Data Name='ProcessId'>0xefc</Data><Data Name='ProcessName'>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Data><Data Name='IpAddress'>-</Data><Data Name='IpPort'>-</Data></EventData></Event>
+MESSAGE: An account failed to log on.
+
+Subject:
+	Security ID:		S-1-5-21-3289802278-1561746829-1498425070-500
+	Account Name:		runneradmin
+	Account Domain:		runnervmm7ud1
+	Logon ID:		0xD3CA9
+
+Logon Type:			2
+
+Account For Which Logon Failed:
+	Security ID:		S-1-0-0
+	Account Name:		aigoprobe
+	Account Domain:		runnervmm7ud1
+
+Failure Information:
+	Failure Reason:		Unknown user name or bad password.
+	Status:			0xC000006D
+	Sub Status:		0xC000006A
+
+Process Information:
+	Caller Process ID:	0xefc
+	Caller Process Name:	C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+
+Network Information:
+	Workstation Name:	runnervmm7ud1
+	Source Network Address:	-
+	Source Port:		-
+
+Detailed Authentication Information:
+	Logon Process:		Advapi  
+	Authentication Package:	Negotiate
+	Transited Services:	-
+	Package Name (NTLM only):	-
+	Key Length:		0
+
+This event is generated when a logon request fails. It is generated on the computer where access was attempted.
+
+The Subject fields indicate the account on the local system which requested the logon. This is most commonly a service such as the Server service, or a local process such as Winlogon.exe or Services.exe.
+
+The Logon Type field indicates the kind of logon that was requested. The most common types are 2 (interactive) and 3 (network).
+
+The Process Information fields indicate which account and process on the system requested the logon.
+
+The Network Information fields indicate where a remote logon request originated. Workstation name is not always available and may be left blank in some cases.
+
+The authentication information fields provide detailed information about this specific logon request.
+	- Transited services indicate which intermediate services have participated in this logon request.
+	- Package name indicates which sub-protocol was used among the NTLM protocols.
+	- Key length indicates the length of the generated session key. This will be 0 if no session key was requested.
+
+EVENT provider='Microsoft-Windows-Security-Auditing' number=4625 record=583309 level=0 shape=EventData:21-named record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4625</EventID><Version>0</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8010000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:36:38.4194129Z'/><EventRecordID>583309</EventRecordID><Correlation ActivityID='{55e49c9e-16b0-0002-6c2c-63b25975dd01}'/><Execution ProcessID='992' ThreadID='496'/><Channel>Security</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-3289802278-1561746829-1498425070-500</Data><Data Name='SubjectUserName'>runneradmin</Data><Data Name='SubjectDomainName'>runnervmm7ud1</Data><Data Name='SubjectLogonId'>0xd3ca9</Data><Data Name='TargetUserSid'>S-1-0-0</Data><Data Name='TargetUserName'>aigoprobe</Data><Data Name='TargetDomainName'>runnervmm7ud1</Data><Data Name='Status'>0xc000006d</Data><Data Name='FailureReason'>%%2313</Data><Data Name='SubStatus'>0xc000006a</Data><Data Name='LogonType'>3</Data><Data Name='LogonProcessName'>Advapi  </Data><Data Name='AuthenticationPackageName'>Negotiate</Data><Data Name='WorkstationName'>runnervmm7ud1</Data><Data Name='TransmittedServices'>-</Data><Data Name='LmPackageName'>-</Data><Data Name='KeyLength'>0</Data><Data Name='ProcessId'>0xefc</Data><Data Name='ProcessName'>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Data><Data Name='IpAddress'>-</Data><Data Name='IpPort'>-</Data></EventData></Event>
+MESSAGE: An account failed to log on.
+
+Subject:
+	Security ID:		S-1-5-21-3289802278-1561746829-1498425070-500
+	Account Name:		runneradmin
+	Account Domain:		runnervmm7ud1
+	Logon ID:		0xD3CA9
+
+Logon Type:			3
+
+Account For Which Logon Failed:
+	Security ID:		S-1-0-0
+	Account Name:		aigoprobe
+	Account Domain:		runnervmm7ud1
+
+Failure Information:
+	Failure Reason:		Unknown user name or bad password.
+	Status:			0xC000006D
+	Sub Status:		0xC000006A
+
+Process Information:
+	Caller Process ID:	0xefc
+	Caller Process Name:	C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+
+Network Information:
+	Workstation Name:	runnervmm7ud1
+	Source Network Address:	-
+	Source Port:		-
+
+Detailed Authentication Information:
+	Logon Process:		Advapi  
+	Authentication Package:	Negotiate
+	Transited Services:	-
+	Package Name (NTLM only):	-
+	Key Length:		0
+
+This event is generated when a logon request fails. It is generated on the computer where access was attempted.
+
+The Subject fields indicate the account on the local system which requested the logon. This is most commonly a service such as the Server service, or a local process such as Winlogon.exe or Services.exe.
+
+The Logon Type field indicates the kind of logon that was requested. The most common types are 2 (interactive) and 3 (network).
+
+The Process Information fields indicate which account and process on the system requested the logon.
+
+The Network Information fields indicate where a remote logon request originated. Workstation name is not always available and may be left blank in some cases.
+
+The authentication information fields provide detailed information about this specific logon request.
+	- Transited services indicate which intermediate services have participated in this logon request.
+	- Package name indicates which sub-protocol was used among the NTLM protocols.
+	- Key length indicates the length of the generated session key. This will be 0 if no session key was requested.
+
+EVENT provider='Microsoft-Windows-Security-Auditing' number=4625 record=583305 level=0 shape=EventData:21-named record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4625</EventID><Version>0</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8010000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:36:38.4163624Z'/><EventRecordID>583305</EventRecordID><Correlation ActivityID='{55e49c9e-16b0-0002-6c2c-63b25975dd01}'/><Execution ProcessID='992' ThreadID='496'/><Channel>Security</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-3289802278-1561746829-1498425070-500</Data><Data Name='SubjectUserName'>runneradmin</Data><Data Name='SubjectDomainName'>runnervmm7ud1</Data><Data Name='SubjectLogonId'>0xd3ca9</Data><Data Name='TargetUserSid'>S-1-0-0</Data><Data Name='TargetUserName'>probe-ghost-b</Data><Data Name='TargetDomainName'>runnervmm7ud1</Data><Data Name='Status'>0xc000006d</Data><Data Name='FailureReason'>%%2313</Data><Data Name='SubStatus'>0xc0000064</Data><Data Name='LogonType'>2</Data><Data Name='LogonProcessName'>Advapi  </Data><Data Name='AuthenticationPackageName'>Negotiate</Data><Data Name='WorkstationName'>runnervmm7ud1</Data><Data Name='TransmittedServices'>-</Data><Data Name='LmPackageName'>-</Data><Data Name='KeyLength'>0</Data><Data Name='ProcessId'>0xefc</Data><Data Name='ProcessName'>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Data><Data Name='IpAddress'>-</Data><Data Name='IpPort'>-</Data></EventData></Event>
+MESSAGE: An account failed to log on.
+
+Subject:
+	Security ID:		S-1-5-21-3289802278-1561746829-1498425070-500
+	Account Name:		runneradmin
+	Account Domain:		runnervmm7ud1
+	Logon ID:		0xD3CA9
+
+Logon Type:			2
+
+Account For Which Logon Failed:
+	Security ID:		S-1-0-0
+	Account Name:		probe-ghost-b
+	Account Domain:		runnervmm7ud1
+
+Failure Information:
+	Failure Reason:		Unknown user name or bad password.
+	Status:			0xC000006D
+	Sub Status:		0xC0000064
+
+Process Information:
+	Caller Process ID:	0xefc
+	Caller Process Name:	C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+
+Network Information:
+	Workstation Name:	runnervmm7ud1
+	Source Network Address:	-
+	Source Port:		-
+
+Detailed Authentication Information:
+	Logon Process:		Advapi  
+	Authentication Package:	Negotiate
+	Transited Services:	-
+	Package Name (NTLM only):	-
+	Key Length:		0
+
+This event is generated when a logon request fails. It is generated on the computer where access was attempted.
+
+The Subject fields indicate the account on the local system which requested the logon. This is most commonly a service such as the Server service, or a local process such as Winlogon.exe or Services.exe.
+
+The Logon Type field indicates the kind of logon that was requested. The most common types are 2 (interactive) and 3 (network).
+
+The Process Information fields indicate which account and process on the system requested the logon.
+
+The Network Information fields indicate where a remote logon request originated. Workstation name is not always available and may be left blank in some cases.
+
+The authentication information fields provide detailed information about this specific logon request.
+	- Transited services indicate which intermediate services have participated in this logon request.
+	- Package name indicates which sub-protocol was used among the NTLM protocols.
+	- Key length indicates the length of the generated session key. This will be 0 if no session key was requested.
+
+EVENT provider='Microsoft-Windows-Security-Auditing' number=4625 record=583303 level=0 shape=EventData:21-named record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4625</EventID><Version>0</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8010000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:36:38.4150643Z'/><EventRecordID>583303</EventRecordID><Correlation ActivityID='{55e49c9e-16b0-0002-6c2c-63b25975dd01}'/><Execution ProcessID='992' ThreadID='496'/><Channel>Security</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-3289802278-1561746829-1498425070-500</Data><Data Name='SubjectUserName'>runneradmin</Data><Data Name='SubjectDomainName'>runnervmm7ud1</Data><Data Name='SubjectLogonId'>0xd3ca9</Data><Data Name='TargetUserSid'>S-1-0-0</Data><Data Name='TargetUserName'>probe-ghost-b</Data><Data Name='TargetDomainName'>runnervmm7ud1</Data><Data Name='Status'>0xc000006d</Data><Data Name='FailureReason'>%%2313</Data><Data Name='SubStatus'>0xc0000064</Data><Data Name='LogonType'>3</Data><Data Name='LogonProcessName'>Advapi  </Data><Data Name='AuthenticationPackageName'>Negotiate</Data><Data Name='WorkstationName'>runnervmm7ud1</Data><Data Name='TransmittedServices'>-</Data><Data Name='LmPackageName'>-</Data><Data Name='KeyLength'>0</Data><Data Name='ProcessId'>0xefc</Data><Data Name='ProcessName'>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Data><Data Name='IpAddress'>-</Data><Data Name='IpPort'>-</Data></EventData></Event>
+MESSAGE: An account failed to log on.
+
+Subject:
+	Security ID:		S-1-5-21-3289802278-1561746829-1498425070-500
+	Account Name:		runneradmin
+	Account Domain:		runnervmm7ud1
+	Logon ID:		0xD3CA9
+
+Logon Type:			3
+
+Account For Which Logon Failed:
+	Security ID:		S-1-0-0
+	Account Name:		probe-ghost-b
+	Account Domain:		runnervmm7ud1
+
+Failure Information:
+	Failure Reason:		Unknown user name or bad password.
+	Status:			0xC000006D
+	Sub Status:		0xC0000064
+
+Process Information:
+	Caller Process ID:	0xefc
+	Caller Process Name:	C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+
+Network Information:
+	Workstation Name:	runnervmm7ud1
+	Source Network Address:	-
+	Source Port:		-
+
+Detailed Authentication Information:
+	Logon Process:		Advapi  
+	Authentication Package:	Negotiate
+	Transited Services:	-
+	Package Name (NTLM only):	-
+	Key Length:		0
+
+This event is generated when a logon request fails. It is generated on the computer where access was attempted.
+
+The Subject fields indicate the account on the local system which requested the logon. This is most commonly a service such as the Server service, or a local process such as Winlogon.exe or Services.exe.
+
+The Logon Type field indicates the kind of logon that was requested. The most common types are 2 (interactive) and 3 (network).
+
+The Process Information fields indicate which account and process on the system requested the logon.
+
+The Network Information fields indicate where a remote logon request originated. Workstation name is not always available and may be left blank in some cases.
+
+The authentication information fields provide detailed information about this specific logon request.
+	- Transited services indicate which intermediate services have participated in this logon request.
+	- Package name indicates which sub-protocol was used among the NTLM protocols.
+	- Key length indicates the length of the generated session key. This will be 0 if no session key was requested.
+
+EVENT provider='Microsoft-Windows-Security-Auditing' number=4625 record=583297 level=0 shape=EventData:21-named record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4625</EventID><Version>0</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8010000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:36:38.4110633Z'/><EventRecordID>583297</EventRecordID><Correlation ActivityID='{55e49c9e-16b0-0002-6c2c-63b25975dd01}'/><Execution ProcessID='992' ThreadID='496'/><Channel>Security</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-3289802278-1561746829-1498425070-500</Data><Data Name='SubjectUserName'>runneradmin</Data><Data Name='SubjectDomainName'>runnervmm7ud1</Data><Data Name='SubjectLogonId'>0xd3ca9</Data><Data Name='TargetUserSid'>S-1-0-0</Data><Data Name='TargetUserName'>probe-ghost-a</Data><Data Name='TargetDomainName'>runnervmm7ud1</Data><Data Name='Status'>0xc000006d</Data><Data Name='FailureReason'>%%2313</Data><Data Name='SubStatus'>0xc0000064</Data><Data Name='LogonType'>3</Data><Data Name='LogonProcessName'>Advapi  </Data><Data Name='AuthenticationPackageName'>Negotiate</Data><Data Name='WorkstationName'>runnervmm7ud1</Data><Data Name='TransmittedServices'>-</Data><Data Name='LmPackageName'>-</Data><Data Name='KeyLength'>0</Data><Data Name='ProcessId'>0xefc</Data><Data Name='ProcessName'>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Data><Data Name='IpAddress'>-</Data><Data Name='IpPort'>-</Data></EventData></Event>
+MESSAGE: An account failed to log on.
+
+Subject:
+	Security ID:		S-1-5-21-3289802278-1561746829-1498425070-500
+	Account Name:		runneradmin
+	Account Domain:		runnervmm7ud1
+	Logon ID:		0xD3CA9
+
+Logon Type:			3
+
+Account For Which Logon Failed:
+	Security ID:		S-1-0-0
+	Account Name:		probe-ghost-a
+	Account Domain:		runnervmm7ud1
+
+Failure Information:
+	Failure Reason:		Unknown user name or bad password.
+	Status:			0xC000006D
+	Sub Status:		0xC0000064
+
+Process Information:
+	Caller Process ID:	0xefc
+	Caller Process Name:	C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+
+Network Information:
+	Workstation Name:	runnervmm7ud1
+	Source Network Address:	-
+	Source Port:		-
+
+Detailed Authentication Information:
+	Logon Process:		Advapi  
+	Authentication Package:	Negotiate
+	Transited Services:	-
+	Package Name (NTLM only):	-
+	Key Length:		0
+
+This event is generated when a logon request fails. It is generated on the computer where access was attempted.
+
+The Subject fields indicate the account on the local system which requested the logon. This is most commonly a service such as the Server service, or a local process such as Winlogon.exe or Services.exe.
+
+The Logon Type field indicates the kind of logon that was requested. The most common types are 2 (interactive) and 3 (network).
+
+The Process Information fields indicate which account and process on the system requested the logon.
+
+The Network Information fields indicate where a remote logon request originated. Workstation name is not always available and may be left blank in some cases.
+
+The authentication information fields provide detailed information about this specific logon request.
+	- Transited services indicate which intermediate services have participated in this logon request.
+	- Package name indicates which sub-protocol was used among the NTLM protocols.
+	- Key length indicates the length of the generated session key. This will be 0 if no session key was requested.
+
+Distinct (name | logon type | status | sub-status), and how many of each:
+    2  aigoprobe | logon type 2 | status 0xc000006d | sub-status 0xc000006a
+    2  aigoprobe | logon type 3 | status 0xc000006d | sub-status 0xc000006a
+    6  probe-ghost-a | logon type 3 | status 0xc000006d | sub-status 0xc0000064
+    1  probe-ghost-b | logon type 2 | status 0xc000006d | sub-status 0xc0000064
+    3  probe-ghost-b | logon type 3 | status 0xc000006d | sub-status 0xc0000064
+The values of the newest one, in order:
+   1. <Data> SubjectUserSid = S-1-5-21-3289802278-1561746829-1498425070-500
+   2. <Data> SubjectUserName = runneradmin
+   3. <Data> SubjectDomainName = runnervmm7ud1
+   4. <Data> SubjectLogonId = 0xd3ca9
+   5. <Data> TargetUserSid = S-1-0-0
+   6. <Data> TargetUserName = aigoprobe
+   7. <Data> TargetDomainName = runnervmm7ud1
+   8. <Data> Status = 0xc000006d
+   9. <Data> FailureReason = %%2313
+  10. <Data> SubStatus = 0xc000006a
+  11. <Data> LogonType = 2
+  12. <Data> LogonProcessName = Advapi  
+  13. <Data> AuthenticationPackageName = Negotiate
+  14. <Data> WorkstationName = runnervmm7ud1
+  15. <Data> TransmittedServices = -
+  16. <Data> LmPackageName = -
+  17. <Data> KeyLength = 0
+  18. <Data> ProcessId = 0xefc
+  19. <Data> ProcessName = C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+  20. <Data> IpAddress = -
+  21. <Data> IpPort = -
+
+--- read the good logon back (event 4624) ---
+QUERY on Security: *[System[(EventID=4624) and TimeCreated[@SystemTime >= '2026-11-15T23:36:27.000Z']] and EventData[Data[@Name='TargetUserName']='aigoprobe']]
+Events 4624 for the test account since the probe started: 1
+EVENT provider='Microsoft-Windows-Security-Auditing' number=4624 record=583317 level=0 shape=EventData:28-named record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4624</EventID><Version>3</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:36:38.4306706Z'/><EventRecordID>583317</EventRecordID><Correlation ActivityID='{55e49c9e-16b0-0002-6c2c-63b25975dd01}'/><Execution ProcessID='992' ThreadID='496'/><Channel>Security</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-3289802278-1561746829-1498425070-500</Data><Data Name='SubjectUserName'>runneradmin</Data><Data Name='SubjectDomainName'>runnervmm7ud1</Data><Data Name='SubjectLogonId'>0xd3ca9</Data><Data Name='TargetUserSid'>S-1-5-21-3289802278-1561746829-1498425070-1003</Data><Data Name='TargetUserName'>aigoprobe</Data><Data Name='TargetDomainName'>runnervmm7ud1</Data><Data Name='TargetLogonId'>0x2183e8</Data><Data Name='LogonType'>3</Data><Data Name='LogonProcessName'>Advapi  </Data><Data Name='AuthenticationPackageName'>Negotiate</Data><Data Name='WorkstationName'>runnervmm7ud1</Data><Data Name='LogonGuid'>{00000000-0000-0000-0000-000000000000}</Data><Data Name='TransmittedServices'>-</Data><Data Name='LmPackageName'>-</Data><Data Name='KeyLength'>0</Data><Data Name='ProcessId'>0xefc</Data><Data Name='ProcessName'>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Data><Data Name='IpAddress'>-</Data><Data Name='IpPort'>-</Data><Data Name='ImpersonationLevel'>%%1833</Data><Data Name='RestrictedAdminMode'>-</Data><Data Name='RemoteCredentialGuard'>-</Data><Data Name='TargetOutboundUserName'>-</Data><Data Name='TargetOutboundDomainName'>-</Data><Data Name='VirtualAccount'>%%1843</Data><Data Name='TargetLinkedLogonId'>0x0</Data><Data Name='ElevatedToken'>%%1843</Data></EventData></Event>
+   1. <Data> SubjectUserSid = S-1-5-21-3289802278-1561746829-1498425070-500
+   2. <Data> SubjectUserName = runneradmin
+   3. <Data> SubjectDomainName = runnervmm7ud1
+   4. <Data> SubjectLogonId = 0xd3ca9
+   5. <Data> TargetUserSid = S-1-5-21-3289802278-1561746829-1498425070-1003
+   6. <Data> TargetUserName = aigoprobe
+   7. <Data> TargetDomainName = runnervmm7ud1
+   8. <Data> TargetLogonId = 0x2183e8
+   9. <Data> LogonType = 3
+  10. <Data> LogonProcessName = Advapi  
+  11. <Data> AuthenticationPackageName = Negotiate
+  12. <Data> WorkstationName = runnervmm7ud1
+  13. <Data> LogonGuid = {00000000-0000-0000-0000-000000000000}
+  14. <Data> TransmittedServices = -
+  15. <Data> LmPackageName = -
+  16. <Data> KeyLength = 0
+  17. <Data> ProcessId = 0xefc
+  18. <Data> ProcessName = C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+  19. <Data> IpAddress = -
+  20. <Data> IpPort = -
+  21. <Data> ImpersonationLevel = %%1833
+  22. <Data> RestrictedAdminMode = -
+  23. <Data> RemoteCredentialGuard = -
+  24. <Data> TargetOutboundUserName = -
+  25. <Data> TargetOutboundDomainName = -
+  26. <Data> VirtualAccount = %%1843
+  27. <Data> TargetLinkedLogonId = 0x0
+  28. <Data> ElevatedToken = %%1843
+
+--- how many 4625 the whole Security log holds ---
+Events 4625 in the whole Security log (count only): 21
+==================== END: 2 failed logons (5.0 s) ====================
+
+==================== SECTION: 3 services that fail ====================
+
+--- method A: a test service that dies by itself ---
+Compiled the test service: D:\a\_temp\aigoprobesvc.exe (4096 bytes)
+COMMAND: sc.exe create aigoprobesvc binPath= "D:\a\_temp\aigoprobesvc.exe" start= demand
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 28 bytes, plain ASCII (no byte above 0x7F)
+[SC] CreateService SUCCESS
+First start, with no recovery action set:
+COMMAND: sc.exe start aigoprobesvc
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 428 bytes, plain ASCII (no byte above 0x7F)
+
+SERVICE_NAME: aigoprobesvc 
+        TYPE               : 10  WIN32_OWN_PROCESS  
+        STATE              : 2  START_PENDING 
+                                (NOT_STOPPABLE, NOT_PAUSABLE, IGNORES_SHUTDOWN)
+        WIN32_EXIT_CODE    : 0  (0x0)
+        SERVICE_EXIT_CODE  : 0  (0x0)
+        CHECKPOINT         : 0x0
+        WAIT_HINT          : 0x7d0
+        PID                : 9572
+        FLAGS              :
+COMMAND: sc.exe query aigoprobesvc
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 278 bytes, plain ASCII (no byte above 0x7F)
+
+SERVICE_NAME: aigoprobesvc 
+        TYPE               : 10  WIN32_OWN_PROCESS  
+        STATE              : 1  STOPPED 
+        WIN32_EXIT_CODE    : 1067  (0x42b)
+        SERVICE_EXIT_CODE  : 0  (0x0)
+        CHECKPOINT         : 0x0
+        WAIT_HINT          : 0x0
+Now with the recovery action "restart after 2 seconds", left to loop for 16 seconds:
+COMMAND: sc.exe failure aigoprobesvc reset= 3600 actions= restart/2000/restart/2000/restart/2000
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 35 bytes, plain ASCII (no byte above 0x7F)
+[SC] ChangeServiceConfig2 SUCCESS
+COMMAND: sc.exe qfailure aigoprobesvc
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 427 bytes, plain ASCII (no byte above 0x7F)
+[SC] QueryServiceConfig2 SUCCESS
+
+SERVICE_NAME: aigoprobesvc
+        RESET_PERIOD (in seconds)    : 3600
+        REBOOT_MESSAGE               : 
+        COMMAND_LINE                 : 
+        FAILURE_ACTIONS              : RESTART -- Delay = 2000 milliseconds.
+                                       RESTART -- Delay = 2000 milliseconds.
+                                       RESTART -- Delay = 2000 milliseconds.
+COMMAND: sc.exe start aigoprobesvc
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 428 bytes, plain ASCII (no byte above 0x7F)
+
+SERVICE_NAME: aigoprobesvc 
+        TYPE               : 10  WIN32_OWN_PROCESS  
+        STATE              : 2  START_PENDING 
+                                (NOT_STOPPABLE, NOT_PAUSABLE, IGNORES_SHUTDOWN)
+        WIN32_EXIT_CODE    : 0  (0x0)
+        SERVICE_EXIT_CODE  : 0  (0x0)
+        CHECKPOINT         : 0x0
+        WAIT_HINT          : 0x7d0
+        PID                : 7552
+        FLAGS              :
+COMMAND: sc.exe failure aigoprobesvc reset= 0 actions= ""
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 35 bytes, plain ASCII (no byte above 0x7F)
+[SC] ChangeServiceConfig2 SUCCESS
+COMMAND: sc.exe stop aigoprobesvc
+EXIT CODE: 1062 (0x00000426)
+STANDARD OUTPUT: 73 bytes, plain ASCII (no byte above 0x7F)
+[SC] ControlService FAILED 1062:
+
+The service has not been started.
+COMMAND: sc.exe delete aigoprobesvc
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 28 bytes, plain ASCII (no byte above 0x7F)
+[SC] DeleteService SUCCESS
+
+--- method A2: services that cannot start ---
+COMMAND: sc.exe create aigoprobemissing binPath= "C:\aigolog-probe\no-such-file.exe" start= demand
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 28 bytes, plain ASCII (no byte above 0x7F)
+[SC] CreateService SUCCESS
+COMMAND: sc.exe start aigoprobemissing
+EXIT CODE: 2 (0x00000002)
+STANDARD OUTPUT: 77 bytes, plain ASCII (no byte above 0x7F)
+[SC] StartService FAILED 2:
+
+The system cannot find the file specified.
+COMMAND: sc.exe delete aigoprobemissing
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 28 bytes, plain ASCII (no byte above 0x7F)
+[SC] DeleteService SUCCESS
+A program that is not a service (Windows waits about 30 seconds for it):
+COMMAND: sc.exe create aigoprobetimeout binPath= "C:\Windows\System32\cmd.exe /c exit 1" start= demand
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 28 bytes, plain ASCII (no byte above 0x7F)
+[SC] CreateService SUCCESS
+COMMAND: sc.exe start aigoprobetimeout
+EXIT CODE: 1053 (0x0000041D)
+STANDARD OUTPUT: 118 bytes, plain ASCII (no byte above 0x7F)
+[SC] StartService FAILED 1053:
+
+The service did not respond to the start or control request in a timely fashion.
+COMMAND: sc.exe delete aigoprobetimeout
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 28 bytes, plain ASCII (no byte above 0x7F)
+[SC] DeleteService SUCCESS
+
+--- method B: kill a Windows service that has its own recovery actions ---
+Running services that have a process of their own: 22
+  Audiosrv (process 2784); a restart action is configured: True
+  CryptSvc (process 3532); a restart action is configured: True
+  Dnscache (process 1776); a restart action is configured: True
+  docker (process 3820); a restart action is configured: True
+  DoSvc (process 5612); a restart action is configured: True
+  gpsvc (process 2204); a restart action is configured: True
+  MDCoreSvc (process 3800); a restart action is configured: True
+  MSDTC (process 9648); a restart action is configured: True
+  MSMQ (process 3940); a restart action is configured: True
+  RdAgent (process 3808); a restart action is configured: True
+  SecurityHealthService (process 3056); a restart action is configured: True
+  Spooler (process 3388); a restart action is configured: True
+  SQLWriter (process 3904); a restart action is configured: False
+  sshd (process 3912); a restart action is configured: False
+  StorSvc (process 6168); a restart action is configured: True
+  vmcompute (process 3736); a restart action is configured: False
+  vmms (process 1996); a restart action is configured: True
+  Wcmsvc (process 3212); a restart action is configured: True
+  WinDefend (process 4008); a restart action is configured: True
+  WindowsAzureGuestAgent (process 4028); a restart action is configured: True
+  WinHttpAutoProxySvc (process 2384); a restart action is configured: True
+  WSLService (process 4224); a restart action is configured: False
+Spooler as found: state Running, start mode Auto, process 3388
+COMMAND: sc.exe qfailure Spooler
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 344 bytes, plain ASCII (no byte above 0x7F)
+[SC] QueryServiceConfig2 SUCCESS
+
+SERVICE_NAME: Spooler
+        RESET_PERIOD (in seconds)    : 3600
+        REBOOT_MESSAGE               : 
+        COMMAND_LINE                 : 
+        FAILURE_ACTIONS              : RESTART -- Delay = 5000 milliseconds.
+                                       RESTART -- Delay = 5000 milliseconds.
+Round 1: killing process 3388 of Spooler
+Round 1: Windows started Spooler again with a new process within 100 s: True
+Round 2: killing process 1760 of Spooler
+Round 2: Windows started Spooler again with a new process within 100 s: True
+
+--- read the Service Control Manager events back ---
+QUERY on System: *[System[Provider[@Name='Service Control Manager'] and TimeCreated[@SystemTime >= '2026-11-15T23:36:27.000Z']]]
+Service Control Manager events since the probe started: 32
+
+##### event number 7000: 2 of them, level 2 #####
+EVENT provider='Service Control Manager' number=7000 record=4839 level=2 shape=EventData:2-named+Binary record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Service Control Manager' Guid='{555908d1-a6d7-4695-8e1e-26931d2012f4}' EventSourceName='Service Control Manager'/><EventID Qualifiers='49152'>7000</EventID><Version>0</Version><Level>2</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x8080000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:11.3694749Z'/><EventRecordID>4839</EventRecordID><Correlation/><Execution ProcessID='964' ThreadID='8052'/><Channel>System</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='param1'>aigoprobetimeout</Data><Data Name='param2'>%%1053</Data><Binary>6100690067006F00700072006F0062006500740069006D0065006F00750074000000</Binary></EventData></Event>
+MESSAGE: The aigoprobetimeout service failed to start due to the following error: 
+The service did not respond to the start or control request in a timely fashion.
+Its values, in order:
+   1. <Data> param1 = aigoprobetimeout
+   2. <Data> param2 = %%1053
+   3. <Binary> (no name) = 6100690067006F00700072006F0062006500740069006D0065006F00750074000000
+
+##### event number 7009: 1 of them, level 2 #####
+EVENT provider='Service Control Manager' number=7009 record=4838 level=2 shape=EventData:2-named+Binary record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Service Control Manager' Guid='{555908d1-a6d7-4695-8e1e-26931d2012f4}' EventSourceName='Service Control Manager'/><EventID Qualifiers='49152'>7009</EventID><Version>0</Version><Level>2</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x8080000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:11.3694749Z'/><EventRecordID>4838</EventRecordID><Correlation/><Execution ProcessID='964' ThreadID='8052'/><Channel>System</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='param1'>120000</Data><Data Name='param2'>aigoprobetimeout</Data><Binary>6100690067006F00700072006F0062006500740069006D0065006F00750074000000</Binary></EventData></Event>
+MESSAGE: A timeout was reached (120000 milliseconds) while waiting for the aigoprobetimeout service to connect.
+Its values, in order:
+   1. <Data> param1 = 120000
+   2. <Data> param2 = aigoprobetimeout
+   3. <Binary> (no name) = 6100690067006F00700072006F0062006500740069006D0065006F00750074000000
+
+##### event number 7031: 7 of them, level 2 #####
+EVENT provider='Service Control Manager' number=7031 record=4842 level=2 shape=EventData:5-named+Binary record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Service Control Manager' Guid='{555908d1-a6d7-4695-8e1e-26931d2012f4}' EventSourceName='Service Control Manager'/><EventID Qualifiers='49152'>7031</EventID><Version>0</Version><Level>2</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x8080000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:25.1027311Z'/><EventRecordID>4842</EventRecordID><Correlation/><Execution ProcessID='964' ThreadID='8052'/><Channel>System</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='param1'>Print Spooler</Data><Data Name='param2'>2</Data><Data Name='param3'>5000</Data><Data Name='param4'>1</Data><Data Name='param5'>Restart the service</Data><Binary>530070006F006F006C00650072000000</Binary></EventData></Event>
+MESSAGE: The Print Spooler service terminated unexpectedly.  It has done this 2 time(s).  The following corrective action will be taken in 5000 milliseconds: Restart the service.
+Its values, in order:
+   1. <Data> param1 = Print Spooler
+   2. <Data> param2 = 2
+   3. <Data> param3 = 5000
+   4. <Data> param4 = 1
+   5. <Data> param5 = Restart the service
+   6. <Binary> (no name) = 530070006F006F006C00650072000000
+
+##### event number 7034: 2 of them, level 2 #####
+EVENT provider='Service Control Manager' number=7034 record=4834 level=2 shape=EventData:2-named+Binary record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Service Control Manager' Guid='{555908d1-a6d7-4695-8e1e-26931d2012f4}' EventSourceName='Service Control Manager'/><EventID Qualifiers='49152'>7034</EventID><Version>0</Version><Level>2</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x8080000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:08.4064338Z'/><EventRecordID>4834</EventRecordID><Correlation/><Execution ProcessID='964' ThreadID='8008'/><Channel>System</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='param1'>aigoprobesvc</Data><Data Name='param2'>7</Data><Binary>6100690067006F00700072006F00620065007300760063000000</Binary></EventData></Event>
+MESSAGE: The aigoprobesvc service terminated unexpectedly.  It has done this 7 time(s).
+Its values, in order:
+   1. <Data> param1 = aigoprobesvc
+   2. <Data> param2 = 7
+   3. <Binary> (no name) = 6100690067006F00700072006F00620065007300760063000000
+
+##### event number 7036: 16 of them, level 4 #####
+EVENT provider='Service Control Manager' number=7036 record=4850 level=4 shape=EventData:2-named+Binary record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Service Control Manager' Guid='{555908d1-a6d7-4695-8e1e-26931d2012f4}' EventSourceName='Service Control Manager'/><EventID Qualifiers='16384'>7036</EventID><Version>0</Version><Level>4</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x8080000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:33.8645202Z'/><EventRecordID>4850</EventRecordID><Correlation/><Execution ProcessID='964' ThreadID='8052'/><Channel>System</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='param1'>Windows PushToInstall Service</Data><Data Name='param2'>stopped</Data><Binary>500075007300680054006F0049006E007300740061006C006C002F0031000000</Binary></EventData></Event>
+MESSAGE: The Windows PushToInstall Service service entered the stopped state.
+Its values, in order:
+   1. <Data> param1 = Windows PushToInstall Service
+   2. <Data> param2 = stopped
+   3. <Binary> (no name) = 500075007300680054006F0049006E007300740061006C006C002F0031000000
+
+##### event number 7040: 1 of them, level 4 #####
+EVENT provider='Service Control Manager' number=7040 record=4847 level=4 shape=EventData:4-named record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Service Control Manager' Guid='{555908d1-a6d7-4695-8e1e-26931d2012f4}' EventSourceName='Service Control Manager'/><EventID Qualifiers='16384'>7040</EventID><Version>0</Version><Level>4</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x8080000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:32.8959247Z'/><EventRecordID>4847</EventRecordID><Correlation/><Execution ProcessID='964' ThreadID='3292'/><Channel>System</Channel><Computer>runnervmm7ud1</Computer><Security UserID='S-1-5-18'/></System><EventData><Data Name='param1'>Background Intelligent Transfer Service</Data><Data Name='param2'>demand start</Data><Data Name='param3'>auto start</Data><Data Name='param4'>BITS</Data></EventData></Event>
+MESSAGE: The start type of the Background Intelligent Transfer Service service was changed from demand start to auto start.
+Its values, in order:
+   1. <Data> param1 = Background Intelligent Transfer Service
+   2. <Data> param2 = demand start
+   3. <Data> param3 = auto start
+   4. <Data> param4 = BITS
+
+##### event number 7045: 3 of them, level 4 #####
+EVENT provider='Service Control Manager' number=7045 record=4837 level=4 shape=EventData:5-named record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Service Control Manager' Guid='{555908d1-a6d7-4695-8e1e-26931d2012f4}' EventSourceName='Service Control Manager'/><EventID Qualifiers='16384'>7045</EventID><Version>0</Version><Level>4</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x8080000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:11.3377254Z'/><EventRecordID>4837</EventRecordID><Correlation/><Execution ProcessID='964' ThreadID='8052'/><Channel>System</Channel><Computer>runnervmm7ud1</Computer><Security UserID='S-1-5-21-3289802278-1561746829-1498425070-500'/></System><EventData><Data Name='ServiceName'>aigoprobetimeout</Data><Data Name='ImagePath'>C:\Windows\System32\cmd.exe /c exit 1</Data><Data Name='ServiceType'>user mode service</Data><Data Name='StartType'>demand start</Data><Data Name='AccountName'>LocalSystem</Data></EventData></Event>
+MESSAGE: A service was installed in the system.
+
+Service Name:  aigoprobetimeout
+Service File Name:  C:\Windows\System32\cmd.exe /c exit 1
+Service Type:  user mode service
+Service Start Type:  demand start
+Service Account:  LocalSystem
+Its values, in order:
+   1. <Data> ServiceName = aigoprobetimeout
+   2. <Data> ImagePath = C:\Windows\System32\cmd.exe /c exit 1
+   3. <Data> ServiceType = user mode service
+   4. <Data> StartType = demand start
+   5. <Data> AccountName = LocalSystem
+
+Every event 7031 since the probe started, oldest last, with its values (is the restart count among them?):
+  record 4842 at 2026-11-15T23:37:25.1027311+00:00
+   1. <Data> param1 = Print Spooler
+   2. <Data> param2 = 2
+   3. <Data> param3 = 5000
+   4. <Data> param4 = 1
+   5. <Data> param5 = Restart the service
+   6. <Binary> (no name) = 530070006F006F006C00650072000000
+  record 4840 at 2026-11-15T23:37:14.6431083+00:00
+   1. <Data> param1 = Print Spooler
+   2. <Data> param2 = 1
+   3. <Data> param3 = 5000
+   4. <Data> param4 = 1
+   5. <Data> param5 = Restart the service
+   6. <Binary> (no name) = 530070006F006F006C00650072000000
+  record 4832 at 2026-11-15T23:37:04.8539056+00:00
+   1. <Data> param1 = aigoprobesvc
+   2. <Data> param2 = 6
+   3. <Data> param3 = 2000
+   4. <Data> param4 = 1
+   5. <Data> param5 = Restart the service
+   6. <Binary> (no name) = 6100690067006F00700072006F00620065007300760063000000
+  record 4830 at 2026-11-15T23:37:01.3142603+00:00
+   1. <Data> param1 = aigoprobesvc
+   2. <Data> param2 = 5
+   3. <Data> param3 = 2000
+   4. <Data> param4 = 1
+   5. <Data> param5 = Restart the service
+   6. <Binary> (no name) = 6100690067006F00700072006F00620065007300760063000000
+  record 4828 at 2026-11-15T23:36:57.7572743+00:00
+   1. <Data> param1 = aigoprobesvc
+   2. <Data> param2 = 4
+   3. <Data> param3 = 2000
+   4. <Data> param4 = 1
+   5. <Data> param5 = Restart the service
+   6. <Binary> (no name) = 6100690067006F00700072006F00620065007300760063000000
+  record 4826 at 2026-11-15T23:36:54.2056884+00:00
+   1. <Data> param1 = aigoprobesvc
+   2. <Data> param2 = 3
+   3. <Data> param3 = 2000
+   4. <Data> param4 = 1
+   5. <Data> param5 = Restart the service
+   6. <Binary> (no name) = 6100690067006F00700072006F00620065007300760063000000
+  record 4824 at 2026-11-15T23:36:50.6543667+00:00
+   1. <Data> param1 = aigoprobesvc
+   2. <Data> param2 = 2
+   3. <Data> param3 = 2000
+   4. <Data> param4 = 1
+   5. <Data> param5 = Restart the service
+   6. <Binary> (no name) = 6100690067006F00700072006F00620065007300760063000000
+
+Every event 7034 since the probe started, oldest last, with its values (is the restart count among them?):
+  record 4834 at 2026-11-15T23:37:08.4064338+00:00
+   1. <Data> param1 = aigoprobesvc
+   2. <Data> param2 = 7
+   3. <Binary> (no name) = 6100690067006F00700072006F00620065007300760063000000
+  record 4822 at 2026-11-15T23:36:44.5345971+00:00
+   1. <Data> param1 = aigoprobesvc
+   2. <Data> param2 = 1
+   3. <Binary> (no name) = 6100690067006F00700072006F00620065007300760063000000
+
+--- which Service Control Manager events the whole System log holds ---
+Service Control Manager events in the System log (up to 5000 newest): 569. Event number and how many:
+    7000  x 4
+    7009  x 1
+    7026  x 3
+    7031  x 7
+    7034  x 5
+    7036  x 533
+    7040  x 12
+    7045  x 4
+==================== END: 3 services that fail (52.8 s) ====================
+
+==================== SECTION: 4 events with unnamed values, and events with no readable message ====================
+
+--- write test events from a source that nobody registered ---
+ReportEvent results for events 4242, 4243, 4244 (0 means written): 0, 0, 0
+COMMAND: eventcreate.exe /T WARNING /ID 999 /L APPLICATION /SO aigolog-probe-eventcreate /D "probe text with the number 42"
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 124 bytes, plain ASCII (no byte above 0x7F)
+
+SUCCESS: An event of type 'WARNING' was created in the 'APPLICATION' log with 'aigolog-probe-eventcreate' as the source.
+
+--- read them back through the API ---
+QUERY on Application: *[System[Provider[@Name='aigolog-probe-unregistered' or @Name='aigolog-probe-eventcreate']]]
+Found: 4 (the probe wrote 4)
+
+EVENT provider='aigolog-probe-eventcreate' number=999 record=3885 level=3 shape=EventData:1-unnamed record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='aigolog-probe-eventcreate'/><EventID Qualifiers='0'>999</EventID><Version>0</Version><Level>3</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x80000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:35.8316689Z'/><EventRecordID>3885</EventRecordID><Correlation/><Execution ProcessID='7476' ThreadID='0'/><Channel>Application</Channel><Computer>runnervmm7ud1</Computer><Security UserID='S-1-5-21-3289802278-1561746829-1498425070-500'/></System><EventData><Data>probe text with the number 42</Data></EventData></Event>
+MESSAGE: probe text with the number 42
+   1. <Data> (no name) = probe text with the number 42
+
+EVENT provider='aigolog-probe-unregistered' number=4244 record=3884 level=4 shape=EventData:no-Data record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='aigolog-probe-unregistered'/><EventID Qualifiers='0'>4244</EventID><Version>0</Version><Level>4</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x80000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:35.6968992Z'/><EventRecordID>3884</EventRecordID><Correlation/><Execution ProcessID='3836' ThreadID='0'/><Channel>Application</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData></EventData></Event>
+MESSAGE: (none: the API returned nothing)
+  (EventData has no children, or there is no EventData)
+
+EVENT provider='aigolog-probe-unregistered' number=4243 record=3883 level=2 shape=EventData:1-unnamed record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='aigolog-probe-unregistered'/><EventID Qualifiers='0'>4243</EventID><Version>0</Version><Level>2</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x80000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:35.6965495Z'/><EventRecordID>3883</EventRecordID><Correlation/><Execution ProcessID='3836' ThreadID='0'/><Channel>Application</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data>only value</Data></EventData></Event>
+MESSAGE: (none: the API returned nothing)
+   1. <Data> (no name) = only value
+
+EVENT provider='aigolog-probe-unregistered' number=4242 record=3882 level=3 shape=EventData:2-unnamed record-number-in-xml=True
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='aigolog-probe-unregistered'/><EventID Qualifiers='0'>4242</EventID><Version>0</Version><Level>3</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x80000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:35.6959908Z'/><EventRecordID>3882</EventRecordID><Correlation/><Execution ProcessID='3836' ThreadID='0'/><Channel>Application</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data>first value</Data><Data>second value</Data></EventData></Event>
+MESSAGE: (none: the API returned nothing)
+   1. <Data> (no name) = first value
+   2. <Data> (no name) = second value
+
+--- the unregistered event as wevtutil shows it, three ways ---
+COMMAND: wevtutil.exe qe Application "/q:*[System[Provider[@Name='aigolog-probe-unregistered'] and (EventID=4242)]]" /c:1 /rd:true /f:text
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 285 bytes, plain ASCII (no byte above 0x7F)
+Event[0]
+  Log Name: Application
+  Source: aigolog-probe-unregistered
+  Date: 2026-11-15T23:37:35.6950000Z
+  Event ID: 4242
+  Task: None 
+  Level: Warning 
+  Opcode: Info  
+  Keyword: Classic, 
+  User: N/A
+  User Name: N/A
+  Computer: runnervmm7ud1
+  Description: 
+N/A
+COMMAND: wevtutil.exe qe Application "/q:*[System[Provider[@Name='aigolog-probe-unregistered'] and (EventID=4242)]]" /c:1 /rd:true /f:xml
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 576 bytes, plain ASCII (no byte above 0x7F)
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='aigolog-probe-unregistered'/><EventID Qualifiers='0'>4242</EventID><Version>0</Version><Level>3</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x80000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:35.6959908Z'/><EventRecordID>3882</EventRecordID><Correlation/><Execution ProcessID='3836' ThreadID='0'/><Channel>Application</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data>first value</Data><Data>second value</Data></EventData></Event>
+COMMAND: wevtutil.exe qe Application "/q:*[System[Provider[@Name='aigolog-probe-unregistered'] and (EventID=4242)]]" /c:1 /rd:true /f:RenderedXml
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 730 bytes, plain ASCII (no byte above 0x7F)
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='aigolog-probe-unregistered'/><EventID Qualifiers='0'>4242</EventID><Version>0</Version><Level>3</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x80000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:35.6959908Z'/><EventRecordID>3882</EventRecordID><Correlation/><Execution ProcessID='3836' ThreadID='0'/><Channel>Application</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data>first value</Data><Data>second value</Data></EventData><RenderingInfo Culture='en-US'><Level>Warning</Level><Task>None</Task><Opcode>Info</Opcode><Keywords><Keyword>Classic</Keyword></Keywords></RenderingInfo></Event>
+
+--- survey of what the three logs already hold ---
+
+SURVEY of the newest 177 events of Application:
+  events with no record number in their XML: 0
+  by shape of the payload:
+        18  EventData:named
+         1  EventData:named+Binary
+        29  EventData:no-Data
+         1  EventData:no-Data+Binary
+       120  EventData:unnamed
+         6  EventData:unnamed+Binary
+         2  UserData
+  by whether Windows could produce a readable message:
+       170  message
+         7  no-message
+  the 25 commonest kinds (count, provider, number, shape, message):
+        48	docker	1	EventData:1-unnamed	message
+        12	Microsoft-Windows-WAS-ListenerAdapter	7003	EventData:1-named	message
+        12	docker	11	EventData:2-unnamed	message
+        10	Microsoft-Windows-Security-SPP	16394	EventData:no-Data	message
+        10	Microsoft-Windows-Security-SPP	16389	EventData:1-unnamed	message
+         9	Microsoft-Windows-Security-SPP	16384	EventData:2-unnamed	message
+         6	Microsoft-Windows-Security-SPP	16398	EventData:2-unnamed	message
+         6	Microsoft-Windows-Security-SPP	1003	EventData:2-unnamed	message
+         4	Microsoft-Windows-Security-SPP	900	EventData:1-unnamed	message
+         4	Microsoft-Windows-Security-SPP	20492	EventData:1-unnamed	message
+         3	WindowsAzureGuestAgent	0	EventData:1-unnamed	no-message
+         3	Microsoft-Windows-WMI	5617	EventData:no-Data	message
+         3	Microsoft-Windows-WMI	5615	EventData:no-Data	message
+         3	Microsoft-Windows-User Profiles Service	1532	EventData:no-Data	message
+         3	Microsoft-Windows-User Profiles Service	1531	EventData:no-Data	message
+         3	Microsoft-Windows-Security-SPP	903	EventData:no-Data	message
+         3	Microsoft-Windows-MSMQ	2028	EventData:no-Data	message
+         2	Microsoft-Windows-Security-SPP	902	EventData:1-unnamed	message
+         2	Microsoft-Windows-Security-SPP	8230	EventData:1-unnamed	message
+         2	Microsoft-Windows-Security-SPP	8197	EventData:1-unnamed	message
+         2	Microsoft-Windows-Security-SPP	16388	EventData:2-unnamed	message
+         2	Microsoft-Windows-Security-SPP	1066	EventData:1-unnamed	message
+         2	Microsoft-Windows-Security-SPP	1040	EventData:2-unnamed+Binary	message
+         2	Microsoft-Windows-Security-SPP	1034	EventData:2-unnamed	message
+         2	Microsoft-Windows-MSDTC 2	4202	EventData:12-named	message
+  kinds that have unnamed values, or no readable message (up to 25):
+        48	docker	1	EventData:1-unnamed	message
+        12	docker	11	EventData:2-unnamed	message
+        10	Microsoft-Windows-Security-SPP	16389	EventData:1-unnamed	message
+         9	Microsoft-Windows-Security-SPP	16384	EventData:2-unnamed	message
+         6	Microsoft-Windows-Security-SPP	16398	EventData:2-unnamed	message
+         6	Microsoft-Windows-Security-SPP	1003	EventData:2-unnamed	message
+         4	Microsoft-Windows-Security-SPP	900	EventData:1-unnamed	message
+         4	Microsoft-Windows-Security-SPP	20492	EventData:1-unnamed	message
+         3	WindowsAzureGuestAgent	0	EventData:1-unnamed	no-message
+         2	Microsoft-Windows-Security-SPP	902	EventData:1-unnamed	message
+         2	Microsoft-Windows-Security-SPP	8230	EventData:1-unnamed	message
+         2	Microsoft-Windows-Security-SPP	8197	EventData:1-unnamed	message
+         2	Microsoft-Windows-Security-SPP	16388	EventData:2-unnamed	message
+         2	Microsoft-Windows-Security-SPP	1066	EventData:1-unnamed	message
+         2	Microsoft-Windows-Security-SPP	1040	EventData:2-unnamed+Binary	message
+         2	Microsoft-Windows-Security-SPP	1034	EventData:2-unnamed	message
+         1	VSS	8193	EventData:3-unnamed+Binary	message
+         1	VSS	13	EventData:4-unnamed+Binary	message
+         1	Microsoft-Windows-Security-SPP	12307	EventData:2-unnamed	message
+         1	Microsoft-Windows-Security-SPP	12289	EventData:1-unnamed+Binary	message
+         1	Microsoft-Windows-Security-SPP	12288	EventData:1-unnamed+Binary	message
+         1	Microsoft-Windows-Security-SPP	1033	EventData:3-unnamed	message
+         1	Microsoft-Windows-AppXDeploymentServer/Operational	2562	EventData:4-unnamed	no-message
+         1	aigolog-probe-unregistered	4244	EventData:no-Data	no-message
+         1	aigolog-probe-unregistered	4243	EventData:1-unnamed	no-message
+
+SURVEY of the newest 500 events of System:
+  events with no record number in their XML: 0
+  by shape of the payload:
+       214  EventData:named
+       254  EventData:named+Binary
+        15  EventData:no-Data
+         2  EventData:no-Data+Binary
+         3  EventData:unnamed
+        12  EventData:unnamed+Binary
+  by whether Windows could produce a readable message:
+       500  message
+  the 25 commonest kinds (count, provider, number, shape, message):
+       239	Service Control Manager	7036	EventData:2-named+Binary	message
+        29	Microsoft-Windows-HttpService	112	EventData:5-named	message
+        17	Microsoft-Windows-Kernel-General	16	EventData:4-named	message
+        13	Microsoft-Windows-FilterManager	6	EventData:6-named	message
+        10	Microsoft-Windows-Hyper-V-VmSwitch	233	EventData:6-named	message
+         9	Microsoft-Windows-Hyper-V-VmSwitch	291	EventData:7-named	message
+         8	Microsoft-Windows-HttpService	113	EventData:6-named	message
+         7	Service Control Manager	7031	EventData:5-named+Binary	message
+         6	Microsoft-Windows-Hyper-V-VmSwitch	292	EventData:5-named	message
+         6	Microsoft-Windows-Hyper-V-VmSwitch	232	EventData:12-named	message
+         4	Service Control Manager	7045	EventData:5-named	message
+         4	Service Control Manager	7040	EventData:4-named	message
+         4	Microsoft-Windows-Kernel-Processor-Power	55	EventData:9-named	message
+         4	Microsoft-Windows-Hyper-V-VmSwitch	71	EventData:10-named	message
+         4	Microsoft-Windows-Hyper-V-VmSwitch	69	EventData:10-named	message
+         4	Microsoft-Windows-Hyper-V-VmSwitch	234	EventData:4-named	message
+         3	Service Control Manager	7034	EventData:2-named+Binary	message
+         3	Service Control Manager	7000	EventData:2-named+Binary	message
+         3	Microsoft-Windows-Time-Service	37	EventData:1-named	message
+         3	Microsoft-Windows-Kernel-General	24	EventData:5-named	message
+         3	Microsoft-Windows-Hyper-V-VmSwitch	9	EventData:6-named	message
+         3	Microsoft-Windows-Hyper-V-VmSwitch	7	EventData:4-named	message
+         3	Microsoft-Windows-Hyper-V-VmSwitch	67	EventData:10-named	message
+         3	Microsoft-Windows-Hyper-V-VmSwitch	264	EventData:10-named	message
+         3	Microsoft-Windows-HttpService	114	EventData:5-named	message
+  kinds that have unnamed values, or no readable message (up to 25):
+         2	VfpExt	7036	EventData:2-unnamed+Binary	message
+         1	volmgr	46	EventData:1-unnamed+Binary	message
+         1	Virtual Disk Service	4	EventData:1-unnamed	message
+         1	Virtual Disk Service	3	EventData:1-unnamed	message
+         1	mlx5	379	EventData:9-unnamed+Binary	message
+         1	mlx5	370	EventData:6-unnamed+Binary	message
+         1	mlx5	290	EventData:3-unnamed+Binary	message
+         1	mlx5	289	EventData:3-unnamed+Binary	message
+         1	mlx5	286	EventData:5-unnamed+Binary	message
+         1	mlx5	285	EventData:6-unnamed+Binary	message
+         1	mlx5	262	EventData:12-unnamed+Binary	message
+         1	mlx5	13	EventData:3-unnamed+Binary	message
+         1	EventLog	6013	EventData:7-unnamed+Binary	message
+         1	EventLog	6009	EventData:5-unnamed	message
+
+SURVEY of the newest 500 events of Security:
+  events with no record number in their XML: 0
+  by shape of the payload:
+       500  EventData:named
+  by whether Windows could produce a readable message:
+       500  message
+  the 25 commonest kinds (count, provider, number, shape, message):
+       347	Microsoft-Windows-Security-Auditing	4688	EventData:15-named	message
+        31	Microsoft-Windows-Security-Auditing	4674	EventData:12-named	message
+        15	Microsoft-Windows-Security-Auditing	4776	EventData:4-named	message
+        14	Microsoft-Windows-Security-Auditing	4627	EventData:12-named	message
+        14	Microsoft-Windows-Security-Auditing	4625	EventData:21-named	message
+        14	Microsoft-Windows-Security-Auditing	4624	EventData:28-named	message
+        13	Microsoft-Windows-Security-Auditing	4672	EventData:5-named	message
+        13	Microsoft-Windows-Security-Auditing	4662	EventData:14-named	message
+         9	Microsoft-Windows-Security-Auditing	4673	EventData:9-named	message
+         7	Microsoft-Windows-Security-Auditing	5379	EventData:11-named	message
+         6	Microsoft-Windows-Security-Auditing	4798	EventData:9-named	message
+         3	Microsoft-Windows-Security-Auditing	4702	EventData:11-named	message
+         3	Microsoft-Windows-Security-Auditing	4697	EventData:12-named	message
+         2	Microsoft-Windows-Security-Auditing	4799	EventData:9-named	message
+         2	Microsoft-Windows-Security-Auditing	4738	EventData:27-named	message
+         1	Microsoft-Windows-Security-Auditing	4732	EventData:10-named	message
+         1	Microsoft-Windows-Security-Auditing	4728	EventData:10-named	message
+         1	Microsoft-Windows-Security-Auditing	4724	EventData:7-named	message
+         1	Microsoft-Windows-Security-Auditing	4722	EventData:7-named	message
+         1	Microsoft-Windows-Security-Auditing	4720	EventData:26-named	message
+         1	Microsoft-Windows-Security-Auditing	4648	EventData:14-named	message
+         1	Microsoft-Windows-Security-Auditing	4634	EventData:5-named	message
+  kinds that have unnamed values, or no readable message (up to 25):
+    (none in this sample)
+==================== END: 4 events with unnamed values, and events with no readable message (6.8 s) ====================
+
+==================== SECTION: 5 what a standard user may read ====================
+NOTE: UAC is off on this runner (see section 1), so the case "an administrator at an ordinary,
+unelevated prompt" (a filtered token) can NOT be measured here. What follows is a STANDARD USER:
+a member of Users only. Section 1 shows the same reads work for the elevated account running this.
+
+--- control: the account running the probe reads one event from each log ---
+Application : read 1 event(s) as the account running the probe
+System : read 1 event(s) as the account running the probe
+Security : read 1 event(s) as the account running the probe
+
+--- standard user, as a separate process ---
+As a separate process started with the standard user's name and password (member of Users only):
+COMMAND: whoami.exe /groups   [run as the standard user aigoprobe]
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 1494 bytes, plain ASCII (no byte above 0x7F)
+
+GROUP INFORMATION
+-----------------
+
+Group Name                             Type             SID          Attributes                                        
+====================================== ================ ============ ==================================================
+Everyone                               Well-known group S-1-1-0      Mandatory group, Enabled by default, Enabled group
+BUILTIN\Users                          Alias            S-1-5-32-545 Mandatory group, Enabled by default, Enabled group
+NT AUTHORITY\INTERACTIVE               Well-known group S-1-5-4      Mandatory group, Enabled by default, Enabled group
+CONSOLE LOGON                          Well-known group S-1-2-1      Mandatory group, Enabled by default, Enabled group
+NT AUTHORITY\Authenticated Users       Well-known group S-1-5-11     Mandatory group, Enabled by default, Enabled group
+NT AUTHORITY\This Organization         Well-known group S-1-5-15     Mandatory group, Enabled by default, Enabled group
+NT AUTHORITY\Local account             Well-known group S-1-5-113    Mandatory group, Enabled by default, Enabled group
+LOCAL                                  Well-known group S-1-2-0      Mandatory group, Enabled by default, Enabled group
+NT AUTHORITY\NTLM Authentication       Well-known group S-1-5-64-10  Mandatory group, Enabled by default, Enabled group
+Mandatory Label\Medium Mandatory Level Label            S-1-16-8192
+COMMAND: wevtutil.exe qe Application /c:1 /f:xml   [run as the standard user aigoprobe]
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 707 bytes, plain ASCII (no byte above 0x7F)
+(content not shown; its first 80 characters: <Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Pr)
+COMMAND: wevtutil.exe qe System /c:1 /f:xml   [run as the standard user aigoprobe]
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 961 bytes, plain ASCII (no byte above 0x7F)
+(content not shown; its first 80 characters: <Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Pr)
+COMMAND: wevtutil.exe qe Security /c:1 /f:xml   [run as the standard user aigoprobe]
+EXIT CODE: 5 (0x00000005)
+STANDARD OUTPUT: 0 bytes, empty
+(content not shown; its first 80 characters: )
+STANDARD ERROR: Access is denied.
+
+Failed to open event query.
+Access is denied.
+
+--- standard user, through the API ---
+LogonUser as aigoprobe, logon type 2 -> Windows error 0
+Token of: runnervmm7ud1\aigoprobe; logon type used: 2 (2 interactive, 4 batch, 3 network)
+Token group SIDs: S-1-5-21-3289802278-1561746829-1498425070-513 S-1-1-0 S-1-5-32-545 S-1-5-4 S-1-2-1 S-1-5-11 S-1-5-15 S-1-5-113 S-1-5-64-10
+  Administrators (S-1-5-32-544): False; Users (S-1-5-32-545): True; Event Log Readers (S-1-5-32-573): False; INTERACTIVE (S-1-5-4): True
+RESULT (member of Users only), read through the API as the standard user:
+  identity of the thread while reading: runnervmm7ud1\aigoprobe
+  Application : ALLOWED (read record 3885)
+  System : ALLOWED (read record 4853)
+  Security : REFUSED
+  [0] System.Management.Automation.MethodInvocationException: Exception calling ".ctor" with "1" argument(s): "Attempted to perform an unauthorized operation." (HResult 0x80131501)
+  [1] System.UnauthorizedAccessException: Attempted to perform an unauthorized operation. (HResult 0x80070005)
+
+--- put the standard user in the group Event Log Readers ---
+Added to Event Log Readers (S-1-5-32-573).
+
+--- standard user in Event Log Readers, as a separate process ---
+As a separate process started with the standard user's name and password (member of Users and Event Log Readers):
+COMMAND: whoami.exe /groups   [run as the standard user aigoprobe]
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 1615 bytes, plain ASCII (no byte above 0x7F)
+
+GROUP INFORMATION
+-----------------
+
+Group Name                             Type             SID          Attributes                                        
+====================================== ================ ============ ==================================================
+Everyone                               Well-known group S-1-1-0      Mandatory group, Enabled by default, Enabled group
+BUILTIN\Users                          Alias            S-1-5-32-545 Mandatory group, Enabled by default, Enabled group
+BUILTIN\Event Log Readers              Alias            S-1-5-32-573 Mandatory group, Enabled by default, Enabled group
+NT AUTHORITY\INTERACTIVE               Well-known group S-1-5-4      Mandatory group, Enabled by default, Enabled group
+CONSOLE LOGON                          Well-known group S-1-2-1      Mandatory group, Enabled by default, Enabled group
+NT AUTHORITY\Authenticated Users       Well-known group S-1-5-11     Mandatory group, Enabled by default, Enabled group
+NT AUTHORITY\This Organization         Well-known group S-1-5-15     Mandatory group, Enabled by default, Enabled group
+NT AUTHORITY\Local account             Well-known group S-1-5-113    Mandatory group, Enabled by default, Enabled group
+LOCAL                                  Well-known group S-1-2-0      Mandatory group, Enabled by default, Enabled group
+NT AUTHORITY\NTLM Authentication       Well-known group S-1-5-64-10  Mandatory group, Enabled by default, Enabled group
+Mandatory Label\Medium Mandatory Level Label            S-1-16-8192
+COMMAND: wevtutil.exe qe Application /c:1 /f:xml   [run as the standard user aigoprobe]
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 707 bytes, plain ASCII (no byte above 0x7F)
+(content not shown; its first 80 characters: <Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Pr)
+COMMAND: wevtutil.exe qe System /c:1 /f:xml   [run as the standard user aigoprobe]
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 961 bytes, plain ASCII (no byte above 0x7F)
+(content not shown; its first 80 characters: <Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Pr)
+COMMAND: wevtutil.exe qe Security /c:1 /f:xml   [run as the standard user aigoprobe]
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 979 bytes, plain ASCII (no byte above 0x7F)
+(content not shown; its first 80 characters: <Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Pr)
+
+--- standard user in Event Log Readers, through the API ---
+LogonUser as aigoprobe, logon type 2 -> Windows error 0
+Token of: runnervmm7ud1\aigoprobe; logon type used: 2 (2 interactive, 4 batch, 3 network)
+Token group SIDs: S-1-5-21-3289802278-1561746829-1498425070-513 S-1-1-0 S-1-5-32-545 S-1-5-32-573 S-1-5-4 S-1-2-1 S-1-5-11 S-1-5-15 S-1-5-113 S-1-5-64-10
+  Administrators (S-1-5-32-544): False; Users (S-1-5-32-545): True; Event Log Readers (S-1-5-32-573): True; INTERACTIVE (S-1-5-4): True
+RESULT (member of Users and Event Log Readers), read through the API as the standard user:
+  identity of the thread while reading: runnervmm7ud1\aigoprobe
+  Application : ALLOWED (read record 3885)
+  System : ALLOWED (read record 4854)
+  Security : ALLOWED (read record 583578)
+==================== END: 5 what a standard user may read (2.8 s) ====================
+
+==================== SECTION: 6 does the readable message come with the event ====================
+
+--- message of one failed logon (the probe's own) ---
+Event 4625, record 583313, through the API:
+  first line of the message: An account failed to log on.
+  that line appears in the plain event XML: False
+  the message is 1980 characters; the plain XML is 1567 characters
+COMMAND: wevtutil.exe qe Security "/q:*[System[(EventRecordID=583313)]]" /c:1 /f:text
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 2280 bytes, plain ASCII (no byte above 0x7F)
+Event[0]
+  Log Name: Security
+  Source: Microsoft-Windows-Security-Auditing
+  Date: 2026-11-15T23:36:38.4220000Z
+  Event ID: 4625
+  Task: Logon 
+  Level: Information 
+  Opcode: Info  
+  Keyword: Audit Failure, 
+  User: N/A
+  User Name: N/A
+  Computer: runnervmm7ud1
+  Description: 
+An account failed to log on.
+
+Subject:
+	Security ID:		S-1-5-21-3289802278-1561746829-1498425070-500
+	Account Name:		runneradmin
+	Account Domain:		runnervmm7ud1
+	Logon ID:		0xD3CA9
+
+Logon Type:			2
+
+Account For Which Logon Failed:
+	Security ID:		S-1-0-0
+	Account Name:		aigoprobe
+	Account Domain:		runnervmm7ud1
+
+Failure Information:
+	Failure Reason:		Unknown user name or bad password.
+	Status:			0xC000006D
+	Sub Status:		0xC000006A
+
+Process Information:
+	Caller Process ID:	0xefc
+	Caller Process Name:	C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+
+Network Information:
+	Workstation Name:	runnervmm7ud1
+	Source Network Address:	-
+	Source Port:		-
+
+Detailed Authentication Information:
+	Logon Process:		Advapi  
+	Authentication Package:	Negotiate
+	Transited Services:	-
+	Package Name (NTLM only):	-
+	Key Length:		0
+
+This event is generated when a logon request fails. It is generated on the computer where access was attempted.
+
+The Subject fields indicate the account on the local system which requested the logon. This is most commonly a service such as the Server service, or a local process such as Winlogon.exe or Services.exe.
+
+The Logon Type field indicates the kind of logon that was requested. The most common types are 2 (interactive) and 3 (network).
+
+The Process Information fields indicate which account and process on the system requested the logon.
+
+The Network Information fields indicate where a remote logon request originated. Workstation name is not always available and may be left blank in some cases.
+
+The authentication information fields provide detailed information about this specific logon request.
+	- Transited services indicate which intermediate services have participated in this logon request.
+	- Package name indicates which sub-protocol was used among the NTLM protocols.
+	- Key length indicates the length of the generated session key. This will be 0 if no session key was requested. 
+COMMAND: wevtutil.exe qe Security "/q:*[System[(EventRecordID=583313)]]" /c:1 /f:xml
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 1567 bytes, plain ASCII (no byte above 0x7F)
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4625</EventID><Version>0</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8010000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:36:38.4224710Z'/><EventRecordID>583313</EventRecordID><Correlation ActivityID='{55e49c9e-16b0-0002-6c2c-63b25975dd01}'/><Execution ProcessID='992' ThreadID='496'/><Channel>Security</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-3289802278-1561746829-1498425070-500</Data><Data Name='SubjectUserName'>runneradmin</Data><Data Name='SubjectDomainName'>runnervmm7ud1</Data><Data Name='SubjectLogonId'>0xd3ca9</Data><Data Name='TargetUserSid'>S-1-0-0</Data><Data Name='TargetUserName'>aigoprobe</Data><Data Name='TargetDomainName'>runnervmm7ud1</Data><Data Name='Status'>0xc000006d</Data><Data Name='FailureReason'>%%2313</Data><Data Name='SubStatus'>0xc000006a</Data><Data Name='LogonType'>2</Data><Data Name='LogonProcessName'>Advapi  </Data><Data Name='AuthenticationPackageName'>Negotiate</Data><Data Name='WorkstationName'>runnervmm7ud1</Data><Data Name='TransmittedServices'>-</Data><Data Name='LmPackageName'>-</Data><Data Name='KeyLength'>0</Data><Data Name='ProcessId'>0xefc</Data><Data Name='ProcessName'>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Data><Data Name='IpAddress'>-</Data><Data Name='IpPort'>-</Data></EventData></Event>
+COMMAND: wevtutil.exe qe Security "/q:*[System[(EventRecordID=583313)]]" /c:1 /f:RenderedXml
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 4387 bytes, plain ASCII (no byte above 0x7F)
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>4625</EventID><Version>0</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8010000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:36:38.4224710Z'/><EventRecordID>583313</EventRecordID><Correlation ActivityID='{55e49c9e-16b0-0002-6c2c-63b25975dd01}'/><Execution ProcessID='992' ThreadID='496'/><Channel>Security</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='SubjectUserSid'>S-1-5-21-3289802278-1561746829-1498425070-500</Data><Data Name='SubjectUserName'>runneradmin</Data><Data Name='SubjectDomainName'>runnervmm7ud1</Data><Data Name='SubjectLogonId'>0xd3ca9</Data><Data Name='TargetUserSid'>S-1-0-0</Data><Data Name='TargetUserName'>aigoprobe</Data><Data Name='TargetDomainName'>runnervmm7ud1</Data><Data Name='Status'>0xc000006d</Data><Data Name='FailureReason'>%%2313</Data><Data Name='SubStatus'>0xc000006a</Data><Data Name='LogonType'>2</Data><Data Name='LogonProcessName'>Advapi  </Data><Data Name='AuthenticationPackageName'>Negotiate</Data><Data Name='WorkstationName'>runnervmm7ud1</Data><Data Name='TransmittedServices'>-</Data><Data Name='LmPackageName'>-</Data><Data Name='KeyLength'>0</Data><Data Name='ProcessId'>0xefc</Data><Data Name='ProcessName'>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Data><Data Name='IpAddress'>-</Data><Data Name='IpPort'>-</Data></EventData><RenderingInfo Culture='en-US'><Message>An account failed to log on.&#13;&#10;&#13;&#10;Subject:&#13;&#10;&#9;Security ID:&#9;&#9;S-1-5-21-3289802278-1561746829-1498425070-500&#13;&#10;&#9;Account Name:&#9;&#9;runneradmin&#13;&#10;&#9;Account Domain:&#9;&#9;runnervmm7ud1&#13;&#10;&#9;Logon ID:&#9;&#9;0xD3CA9&#13;&#10;&#13;&#10;Logon Type:&#9;&#9;&#9;2&#13;&#10;&#13;&#10;Account For Which Logon Failed:&#13;&#10;&#9;Security ID:&#9;&#9;S-1-0-0&#13;&#10;&#9;Account Name:&#9;&#9;aigoprobe&#13;&#10;&#9;Account Domain:&#9;&#9;runnervmm7ud1&#13;&#10;&#13;&#10;Failure Information:&#13;&#10;&#9;Failure Reason:&#9;&#9;Unknown user name or bad password.&#13;&#10;&#9;Status:&#9;&#9;&#9;0xC000006D&#13;&#10;&#9;Sub Status:&#9;&#9;0xC000006A&#13;&#10;&#13;&#10;Process Information:&#13;&#10;&#9;Caller Process ID:&#9;0xefc&#13;&#10;&#9;Caller Process Name:&#9;C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe&#13;&#10;&#13;&#10;Network Information:&#13;&#10;&#9;Workstation Name:&#9;runnervmm7ud1&#13;&#10;&#9;Source Network Address:&#9;-&#13;&#10;&#9;Source Port:&#9;&#9;-&#13;&#10;&#13;&#10;Detailed Authentication Information:&#13;&#10;&#9;Logon Process:&#9;&#9;Advapi  &#13;&#10;&#9;Authentication Package:&#9;Negotiate&#13;&#10;&#9;Transited Services:&#9;-&#13;&#10;&#9;Package Name (NTLM only):&#9;-&#13;&#10;&#9;Key Length:&#9;&#9;0&#13;&#10;&#13;&#10;This event is generated when a logon request fails. It is generated on the computer where access was attempted.&#13;&#10;&#13;&#10;The Subject fields indicate the account on the local system which requested the logon. This is most commonly a service such as the Server service, or a local process such as Winlogon.exe or Services.exe.&#13;&#10;&#13;&#10;The Logon Type field indicates the kind of logon that was requested. The most common types are 2 (interactive) and 3 (network).&#13;&#10;&#13;&#10;The Process Information fields indicate which account and process on the system requested the logon.&#13;&#10;&#13;&#10;The Network Information fields indicate where a remote logon request originated. Workstation name is not always available and may be left blank in some cases.&#13;&#10;&#13;&#10;The authentication information fields provide detailed information about this specific logon request.&#13;&#10;&#9;- Transited services indicate which intermediate services have participated in this logon request.&#13;&#10;&#9;- Package name indicates which sub-protocol was used among the NTLM protocols.&#13;&#10;&#9;- Key length indicates the length of the generated session key. This will be 0 if no session key was requested.</Message><Level>Information</Level><Task>Logon</Task><Opcode>Info</Opcode><Channel>Security</Channel><Provider>Microsoft Windows security auditing.</Provider><Keywords><Keyword>Audit Failure</Keyword></Keywords></RenderingInfo></Event>
+
+--- message of one service crash ---
+Event 7031, record 4842, through the API:
+  first line of the message: The Print Spooler service terminated unexpectedly.  It has done this 2 time(s).  The following corrective action will be taken in 5000 milliseconds: Restart the service.
+  that line appears in the plain event XML: False
+  the message is 169 characters; the plain XML is 837 characters
+COMMAND: wevtutil.exe qe System "/q:*[System[(EventRecordID=4842)]]" /c:1 /f:text
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 437 bytes, plain ASCII (no byte above 0x7F)
+Event[0]
+  Log Name: System
+  Source: Service Control Manager
+  Date: 2026-11-15T23:37:25.1020000Z
+  Event ID: 7031
+  Task: N/A
+  Level: Error 
+  Opcode: N/A
+  Keyword: Classic, 
+  User: N/A
+  User Name: N/A
+  Computer: runnervmm7ud1
+  Description: 
+The Print Spooler service terminated unexpectedly.  It has done this 2 time(s).  The following corrective action will be taken in 5000 milliseconds: Restart the service. 
+COMMAND: wevtutil.exe qe System "/q:*[System[(EventRecordID=4842)]]" /c:1 /f:xml
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 837 bytes, plain ASCII (no byte above 0x7F)
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Service Control Manager' Guid='{555908d1-a6d7-4695-8e1e-26931d2012f4}' EventSourceName='Service Control Manager'/><EventID Qualifiers='49152'>7031</EventID><Version>0</Version><Level>2</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x8080000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:25.1027311Z'/><EventRecordID>4842</EventRecordID><Correlation/><Execution ProcessID='964' ThreadID='8052'/><Channel>System</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='param1'>Print Spooler</Data><Data Name='param2'>2</Data><Data Name='param3'>5000</Data><Data Name='param4'>1</Data><Data Name='param5'>Restart the service</Data><Binary>530070006F006F006C00650072000000</Binary></EventData></Event>
+COMMAND: wevtutil.exe qe System "/q:*[System[(EventRecordID=4842)]]" /c:1 /f:RenderedXml
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 1201 bytes, plain ASCII (no byte above 0x7F)
+<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Service Control Manager' Guid='{555908d1-a6d7-4695-8e1e-26931d2012f4}' EventSourceName='Service Control Manager'/><EventID Qualifiers='49152'>7031</EventID><Version>0</Version><Level>2</Level><Task>0</Task><Opcode>0</Opcode><Keywords>0x8080000000000000</Keywords><TimeCreated SystemTime='2026-11-15T23:37:25.1027311Z'/><EventRecordID>4842</EventRecordID><Correlation/><Execution ProcessID='964' ThreadID='8052'/><Channel>System</Channel><Computer>runnervmm7ud1</Computer><Security/></System><EventData><Data Name='param1'>Print Spooler</Data><Data Name='param2'>2</Data><Data Name='param3'>5000</Data><Data Name='param4'>1</Data><Data Name='param5'>Restart the service</Data><Binary>530070006F006F006C00650072000000</Binary></EventData><RenderingInfo Culture='en-US'><Message>The Print Spooler service terminated unexpectedly.  It has done this 2 time(s).  The following corrective action will be taken in 5000 milliseconds: Restart the service.</Message><Level>Error</Level><Provider>Microsoft-Windows-Service Control Manager</Provider><Keywords><Keyword>Classic</Keyword></Keywords></RenderingInfo></Event>
+==================== END: 6 does the readable message come with the event (0.5 s) ====================
+
+==================== SECTION: 7 bounding a read, and how the API refuses ====================
+
+--- newest and oldest of System ---
+Newest three, as returned newest first (record number @ time): 4854 @ 2026-11-15T23:37:42.5423496+00:00; 4853 @ 2026-11-15T23:37:41.9156988+00:00; 4852 @ 2026-11-15T23:37:41.3416716+00:00
+Oldest three, as returned oldest first (record number @ time): 3713 @ 2026-11-03T17:52:01.7269430+00:00; 3714 @ 2026-11-03T17:52:01.7364195+00:00; 3715 @ 2026-11-03T17:52:01.7508197+00:00
+
+--- bound by record number ---
+QUERY on System: *[System[EventRecordID > 4851]] -> 3 events (3 or a few more expected); record numbers: 4852, 4853, 4854
+
+--- bound by age (the last hour) ---
+QUERY on System: *[System[TimeCreated[timediff(@SystemTime) <= 3600000]]] -> 353 events
+
+--- bound by a moment in time (since the probe started) ---
+QUERY on System: *[System[TimeCreated[@SystemTime >= '2026-11-15T23:36:27.000Z']]] -> 36 events
+
+--- the last seven days of each log ---
+Application: 76 events in the last 7 days (count stops at 200000)
+System: 353 events in the last 7 days (count stops at 200000)
+Security: 1796 events in the last 7 days (count stops at 200000)
+
+--- a query that is not valid ---
+A malformed query is refused like this:
+  [0] System.Management.Automation.MethodInvocationException: Exception calling ".ctor" with "1" argument(s): "The specified query is invalid" (HResult 0x80131501)
+  [1] System.Diagnostics.Eventing.Reader.EventLogException: The specified query is invalid (HResult 0x80131500)
+
+--- a log that does not exist ---
+A log that does not exist is refused like this:
+  [0] System.Management.Automation.MethodInvocationException: Exception calling ".ctor" with "1" argument(s): "The specified channel could not be found" (HResult 0x80131501)
+  [1] System.Diagnostics.Eventing.Reader.EventLogNotFoundException: The specified channel could not be found (HResult 0x80131500)
+
+--- a file that is not an event log ---
+A file that is not an event log is refused like this:
+  [0] System.Management.Automation.MethodInvocationException: Exception calling ".ctor" with "1" argument(s): "Insufficient information exists to identify the cause of failure" (HResult 0x80131501)
+  [1] System.Diagnostics.Eventing.Reader.EventLogException: Insufficient information exists to identify the cause of failure (HResult 0x80131500)
+
+--- save the probe's own events as event log files, and read those files back ---
+COMMAND: wevtutil.exe epl Security "D:\a\_temp\capture\security-4625-since-start.evtx" "/q:*[System[(EventID=4625) and TimeCreated[@SystemTime >= '2026-11-15T23:36:27.000Z']] and EventData[Data[@Name='TargetUserName']='probe-ghost-a' or Data[@Name='TargetUserName']='probe-ghost-b' or Data[@Name='TargetUserName']='aigoprobe']]"
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 0 bytes, empty
+FILE security-4625-since-start.evtx: 69632 bytes; read back 14 events through the API; 14 of them came with a readable message; record numbers 583287 to 583313
+COMMAND: wevtutil.exe epl System "D:\a\_temp\capture\system-scm-since-start.evtx" "/q:*[System[Provider[@Name='Service Control Manager'] and TimeCreated[@SystemTime >= '2026-11-15T23:36:27.000Z']]]"
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 0 bytes, empty
+FILE system-scm-since-start.evtx: 69632 bytes; read back 34 events through the API; 34 of them came with a readable message; record numbers 4819 to 4854
+COMMAND: wevtutil.exe epl Application "D:\a\_temp\capture\application-probe-sources.evtx" "/q:*[System[Provider[@Name='aigolog-probe-unregistered' or @Name='aigolog-probe-eventcreate']]]"
+EXIT CODE: 0 (0x00000000)
+STANDARD OUTPUT: 0 bytes, empty
+FILE application-probe-sources.evtx: 69632 bytes; read back 4 events through the API; 1 of them came with a readable message; record numbers 3882 to 3885
+
+--- rough speed of reading (a lead, not a measurement) ---
+Run 1: 3000 Security events read and rendered to XML (3683095 characters) in 115 ms
+Run 2: 3000 Security events read and rendered to XML (3683095 characters) in 118 ms
+ROUGH ONLY: a shared runner, through .NET rather than Go, background load not controlled.
+==================== END: 7 bounding a read, and how the API refuses (0.7 s) ====================
+
+==================== SECTION: 8 tidy up and list what was captured ====================
+
+--- remove the test account ---
+Removed the local account aigoprobe.
+
+--- captured files ---
+        576  application-probe-4242-04.xml
+        550  application-probe-4243-03.xml
+        527  application-probe-4244-02.xml
+        622  application-probe-999-01.xml
+      69632  application-probe-sources.evtx
+       3601  machine-auditpol-before.txt
+      55888  machine-channels.txt
+        541  machine-gl-Application.txt
+        218  machine-gli-Application.txt
+        221  machine-gli-Security.txt
+        219  machine-gli-System.txt
+        325  machine-gl-Security.txt
+        410  machine-gl-System.txt
+       2240  machine-whoami-groups.txt
+     100043  report.txt
+       1942  security-4624-01.xml
+       1567  security-4625-01.xml
+       1567  security-4625-02.xml
+       1567  security-4625-03.xml
+       1567  security-4625-04.xml
+       1571  security-4625-05.xml
+       1571  security-4625-06.xml
+       1571  security-4625-07.xml
+       1571  security-4625-08.xml
+       1571  security-4625-09.xml
+       1571  security-4625-10.xml
+       1571  security-4625-11.xml
+       1571  security-4625-12.xml
+       1571  security-4625-13.xml
+       1571  security-4625-14.xml
+      69632  security-4625-since-start.evtx
+       2905  survey-Application.tsv
+       1678  survey-Security.tsv
+       7825  survey-System.tsv
+        776  system-scm-7000-01.xml
+        773  system-scm-7000-02.xml
+        776  system-scm-7009-01.xml
+        837  system-scm-7031-01.xml
+        837  system-scm-7031-02.xml
+        856  system-scm-7031-03.xml
+        751  system-scm-7034-01.xml
+        751  system-scm-7034-02.xml
+        786  system-scm-7036-01.xml
+        748  system-scm-7036-02.xml
+        760  system-scm-7036-03.xml
+        806  system-scm-7040-01.xml
+        919  system-scm-7045-01.xml
+        915  system-scm-7045-02.xml
+        905  system-scm-7045-03.xml
+      69632  system-scm-since-start.evtx
+        730  wevtutil-application-4242-RenderedXml.txt
+        285  wevtutil-application-4242-text.txt
+        576  wevtutil-application-4242-xml.txt
+       4387  wevtutil-security-4625-RenderedXml.txt
+       2280  wevtutil-security-4625-text.txt
+       1567  wevtutil-security-4625-xml.txt
+       1201  wevtutil-system-scm-crash-RenderedXml.txt
+        437  wevtutil-system-scm-crash-text.txt
+        837  wevtutil-system-scm-crash-xml.txt
+==================== END: 8 tidy up and list what was captured (0.1 s) ====================
+
+NOT MEASURED BY THIS PROBE: an administrator at an unelevated prompt (UAC is off here); whether a
+database written by an elevated run can be opened by an unelevated one; reading speed in Go.
+Sections that failed as a whole: none
+Probes that failed: none
+End of the aigolog Windows Event Log probe.

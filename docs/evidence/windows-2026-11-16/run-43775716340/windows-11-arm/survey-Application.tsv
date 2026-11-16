@@ -1,0 +1,33 @@
+count	provider	number	shape	message
+     9	Microsoft-Windows-Security-SPP	16394	EventData:no-Data	message
+     9	Microsoft-Windows-Security-SPP	16384	EventData:2-unnamed	message
+     5	Microsoft-Windows-AppModel-State	4	EventData:2-named	message
+     4	SecurityCenter	15	EventData:2-unnamed	message
+     4	Microsoft-Windows-Security-SPP	900	EventData:1-unnamed	message
+     4	Microsoft-Windows-AppModel-State	24	EventData:4-named	message
+     4	Microsoft-Windows-AppModel-State	23	EventData:3-named	message
+     3	WindowsAzureGuestAgent	0	EventData:1-unnamed	no-message
+     3	Microsoft-Windows-WMI	5617	EventData:no-Data	message
+     3	Microsoft-Windows-WMI	5615	EventData:no-Data	message
+     3	Microsoft-Windows-User Profiles Service	1532	EventData:no-Data	message
+     3	Microsoft-Windows-User Profiles Service	1531	EventData:no-Data	message
+     3	Microsoft-Windows-Security-SPP	903	EventData:no-Data	message
+     3	Microsoft-Windows-Security-SPP	1003	EventData:2-unnamed	message
+     3	Microsoft-Windows-Perflib	1008	EventData:3-named	message
+     2	SecurityCenter	1	EventData:no-Data	message
+     2	Microsoft-Windows-Security-SPP	902	EventData:1-unnamed	message
+     2	Microsoft-Windows-Security-SPP	1066	EventData:1-unnamed	message
+     2	Microsoft-Windows-Security-SPP	1040	EventData:2-unnamed+Binary	message
+     2	Microsoft-Windows-Search	1003	EventData:1-named	message
+     1	Microsoft-Windows-Winlogon	6006	EventData:3-unnamed+Binary	message
+     1	Microsoft-Windows-Winlogon	6005	EventData:2-unnamed+Binary	message
+     1	Microsoft-Windows-Security-SPP	12307	EventData:2-unnamed	message
+     1	Microsoft-Windows-Search-ProfileNotify	5	EventData:1-named+Binary	message
+     1	Microsoft-Windows-Search	1010	EventData:1-named	message
+     1	Microsoft-Windows-Search	1008	EventData:2-named	message
+     1	Microsoft-Windows-Search	1005	EventData:1-named	message
+     1	Microsoft-Windows-Search	1004	EventData:2-named	message
+     1	aigolog-probe-unregistered	4244	EventData:no-Data	no-message
+     1	aigolog-probe-unregistered	4243	EventData:1-unnamed	no-message
+     1	aigolog-probe-unregistered	4242	EventData:2-unnamed	no-message
+     1	aigolog-probe-eventcreate	999	EventData:1-unnamed	message

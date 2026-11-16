@@ -1,0 +1,42 @@
+events	provider	number	route	pattern (first 160 characters)	note
+    48	docker	1	message file	%1{U+000D}{U+000A}	C:\Windows\system32\dockerd.exe
+    12	Microsoft-Windows-WAS-ListenerAdapter	7003	none		provider data lists 6 kinds, not this one; no message file in the registry
+    12	docker	11	message file	%1 [%2]{U+000D}{U+000A}	C:\Windows\system32\dockerd.exe
+     8	Microsoft-Windows-Security-SPP	1034	message file	Duplicate definition of policy found. Policy name=%1  Priority=%2{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     7	Microsoft-Windows-Security-SPP	16394	message file	Offline downlevel migration succeeded.{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     7	Microsoft-Windows-Security-SPP	1003	message file	The Software Protection service has completed licensing status check.{U+000D}{U+000A}Application Id=%1{U+000D}{U+000A}Licensing Status=%2{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     6	Microsoft-Windows-Security-SPP	16384	message file	Successfully scheduled Software Protection service for re-start at %1. Reason: %2.{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     5	Microsoft-Windows-Security-SPP	900	message file	The Software Protection service is starting.{U+000D}{U+000A}Parameters:%1{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     4	Microsoft-Windows-User Profiles General	1509	provider data	Windows cannot copy file %1 to location %2. This error may be caused by network problems or insufficient security rights. {U+000D}{U+000A}{U+000D}{U+000A} DETAI...	
+     3	WindowsAzureGuestAgent	0	message file	%1{U+000D}{U+000A}	C:\Windows\Microsoft.NET\Framework64\v4.0.30319\EventLogMessages.dll
+     3	Microsoft-Windows-WMI	5617	provider data	Windows Management Instrumentation Service subsystems initialized successfully	
+     3	Microsoft-Windows-WMI	5615	provider data	Windows Management Instrumentation Service started sucessfully	
+     3	Microsoft-Windows-User Profiles Service	1532	provider data	The User Profile Service has stopped.  {U+000D}{U+000A}{U+000D}{U+000A}	
+     3	Microsoft-Windows-User Profiles Service	1531	provider data	The User Profile Service has started successfully.  {U+000D}{U+000A}{U+000D}{U+000A}	
+     3	Microsoft-Windows-Security-SPP	902	message file	The Software Protection service has started.{U+000D}{U+000A}%1{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     3	Microsoft-Windows-Security-SPP	1066	message file	Initialization status for service objects.{U+000D}{U+000A}%1{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     3	Microsoft-Windows-Security-SPP	1033	message file	These policies are being excluded since they are only defined with override-only attribute.{U+000D}{U+000A}Policy Names=%1{U+000D}{U+000A}App Id=%2{U+000D}{U+00...	C:\Windows\system32\sppsvc.exe
+     3	Microsoft-Windows-MSMQ	2028	message file	The Message Queuing service started.{U+000D}{U+000A}	C:\Windows\system32\mqutil.dll
+     3	Microsoft-Windows-EventSystem	4625	none		provider data lists 28 kinds, not this one; no message file in the registry
+     3	Desktop Window Manager	9027	message file	The Desktop Window Manager has registered the session port.{U+000D}{U+000A}	C:\Windows\system32\dwm.exe
+     2	Microsoft-Windows-Security-SPP	903	message file	The Software Protection service has stopped.{U+000D}{U+000A}{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     2	Microsoft-Windows-Security-SPP	8230	message file	The rules engine successfully re-evaluated the schedule.{U+000D}{U+000A}Kernel policies:{U+000D}{U+000A}%1{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     2	Microsoft-Windows-Security-SPP	8197	message file	SLUI.exe was launched with the following command-line parameters:{U+000D}{U+000A}%1{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     2	Microsoft-Windows-Security-SPP	16388	message file	The current time is %1 : %2.{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     2	Microsoft-Windows-Security-SPP	1040	message file	Hardware has changed from previous boot.{U+000D}{U+000A} AppId=%1, SkuId=%2.{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     2	Microsoft-Windows-Search-ProfileNotify	5	none		provider data lists 6 kinds, not this one; no message file in the registry
+     2	Microsoft-Windows-MSDTC 2	4202	none		provider data lists 32 kinds, not this one; no message file in the registry
+     2	Microsoft-Windows-LoadPerf	1001	provider data	Performance counters for the %1 (%2) service were removed successfully. The Record Data contains the new values of the system Last Counter and Last Help registr...	
+     2	Microsoft-Windows-LoadPerf	1000	provider data	Performance counters for the %1 (%2) service were loaded successfully. The Record Data in the data section contains the new index values assigned to this servic...	
+     1	Microsoft-Windows-Security-SPP	12307	message file	Skipped Rearm for AppId = %1, SkuId = %2.{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     1	Microsoft-Windows-Security-SPP	12289	message file	The client has processed an activation response from the key management service machine.{U+000D}{U+000A}Info:{U+000D}{U+000A}%1{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     1	Microsoft-Windows-Security-SPP	12288	message file	The client has sent an activation request to the key management service machine.{U+000D}{U+000A}Info:{U+000D}{U+000A}%1{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     1	Microsoft-Windows-Security-SPP	1024	message file	The hardware has changed.{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     1	Microsoft-Windows-Security-SPP	1016	message file	Proof of Purchase installed successfully. {U+000D}{U+000A}ACID=%1{U+000D}{U+000A}PKeyId=%2{U+000D}{U+000A}	C:\Windows\system32\sppsvc.exe
+     1	Microsoft-Windows-MSDTC	4111	none		provider data lists 387 kinds, not this one; no message file in the registry
+     1	aigolog-probe-unregistered	4246	none		opening it failed: MethodInvocationException: Exception calling ".ctor" with "1" argument(s): "The system cannot find the file specified"; no message file in the registry
+     1	aigolog-probe-unregistered	4245	none		opening it failed: MethodInvocationException: Exception calling ".ctor" with "1" argument(s): "The system cannot find the file specified"; no message file in the registry
+     1	aigolog-probe-unregistered	4244	none		opening it failed: MethodInvocationException: Exception calling ".ctor" with "1" argument(s): "The system cannot find the file specified"; no message file in the registry
+     1	aigolog-probe-unregistered	4243	none		opening it failed: MethodInvocationException: Exception calling ".ctor" with "1" argument(s): "The system cannot find the file specified"; no message file in the registry
+     1	aigolog-probe-unregistered	4242	none		opening it failed: MethodInvocationException: Exception calling ".ctor" with "1" argument(s): "The system cannot find the file specified"; no message file in the registry
+     1	aigolog-probe-eventcreate	999	message file	%1{U+000D}{U+000A}	C:\Windows\System32\EventCreate.exe
