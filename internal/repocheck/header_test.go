@@ -64,6 +64,19 @@ func TestHeaderCheckAcceptsTheRightHeaderOnly(t *testing.T) {
 	}
 }
 
+func TestHeaderCheckRejectsAHeaderWithNoBlankLineAfterIt(t *testing.T) {
+	want := headerAsGoComment("Copyright (c) 2026 X\n")
+	if startsWithHeader(want+"package p\n", want) {
+		t.Error("a header followed directly by code was accepted")
+	}
+	if startsWithHeader(want, want) {
+		t.Error("a file that is only the header was accepted")
+	}
+	if !startsWithHeader(want+"\npackage p\n", want) {
+		t.Error("a header followed by an empty line was refused")
+	}
+}
+
 func TestEveryGoFileStartsWithTheLicenceHeader(t *testing.T) {
 	root := repoRoot(t)
 	raw, err := os.ReadFile(filepath.Join(root, "source-header.txt"))
