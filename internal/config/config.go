@@ -107,11 +107,11 @@ func Load(lookupEnv func(string) (string, bool)) (Config, error) {
 	}
 
 	if v, ok := get("AIGOLOG_KEEP_DAYS"); ok {
-		n, err := envInt("AIGOLOG_KEEP_DAYS", v, maxKeepDays)
+		n, err := envKeepDays("AIGOLOG_KEEP_DAYS", v)
 		if err != nil {
 			return Config{}, err
 		}
-		cfg.KeepDays = int(n)
+		cfg.KeepDays = n
 	}
 	if v, ok := get("AIGOLOG_MAX_TOTAL_BYTES"); ok {
 		n, err := envInt("AIGOLOG_MAX_TOTAL_BYTES", v, math.MaxInt64)
@@ -172,6 +172,17 @@ func readFile(path string, cfg *Config) error {
 		cfg.CacheDir = *f.CacheDir
 	}
 	return nil
+}
+
+// envKeepDays reads the number of days from 1 to maxKeepDays out of the
+// variable name. envInt does the checks and gives the messages, in 64 bits so
+// that they read the same on every platform; the value is then read again by
+// strconv.Atoi, which returns an int directly, so no int64 is converted.
+func envKeepDays(name, value string) (int, error) {
+	if _, err := envInt(name, value, maxKeepDays); err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(value))
 }
 
 // envInt reads a whole number from 1 to upper out of the variable name.
