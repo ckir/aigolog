@@ -5,9 +5,10 @@ Log reader into part 1, allowed C code, and chose how the Event Log is read. Tho
 through a second review of three rounds. On 2026-11-16 real events were captured on GitHub's
 hosted Windows machines, with the owner's go-ahead, while the Windows virtual machine the owner
 had chosen first was still starting; the owner then stopped that machine (section 8, A9). What
-was measured is in sections 7.1 and 9. The rules the measurements call for are listed in section
-7.1 as proposals and are not decided. Nothing added on 2026-11-16 has been through the second
-model's review. The handoff files under `docs/handoff/` stay on hold.
+was measured is in sections 7.1 and 9. The owner then ruled on the seven rules the measurements
+called for, after the second model and I had each recommended on them (section 7.1). The text
+added on 2026-11-16 has not yet been through the second model's review. The handoff files under
+`docs/handoff/` stay on hold.
 Date: 2026-11-15.
 
 This document describes the first of two parts of aigolog. It is written so that a builder can
@@ -289,10 +290,10 @@ chose how it reads: "A Windows' own API" (section 6.6).
 - **Getting the events.** On Windows, aigolog asks Windows' own Event Log API for a live log by
   name (Security, System, Application or any other) or for an exported log file, and receives
   each event as XML. The calls are made directly from Go, the way Elastic's winlogbeat makes them
-  (section 9); no C code is involved. This part exists only in the Windows build. For each event
-  it hands the decoder two things: the event's XML, and the event's readable message when Windows
-  can produce one, which takes a separate call and the publisher's own data on that machine
-  (section 9).
+  (section 9); no C code is involved. This part exists only in the Windows build. It hands the
+  decoder each event's XML. Windows' words for an event are not in that XML; they take a separate
+  call and the publisher's own data on that machine, and are fetched sparingly (see "Windows'
+  words" below).
 - **Decoding them.** A decoder turns one event's XML into one record. It is ordinary Go, runs on
   every system, and is what the tests exercise on the development machine, from events captured
   on Windows. The same decoder reads event XML from a file or from standard input (the `eventxml`
@@ -300,26 +301,64 @@ chose how it reads: "A Windows' own API" (section 6.6).
   input carries no readable message. A stream is a run of `Event` elements, with or without one
   element enclosing them all, and each `Event` is decoded on its own. That route is also the
   fallback if the direct calls prove hard to get right.
+- **Characters that XML forbids.** Before an event's XML is decoded, each character that XML does
+  not allow (those below U+0020 other than tab, line feed and carriage return; U+FFFE; U+FFFF) is
+  rewritten, in the text handed to the decoder, as a backslash, the letter u and its four-digit
+  code. Half of a surrogate pair on its own, or bytes that are no character at all, are rewritten
+  the same way with the code FFFD. The event is kept. The run counts the
+  events and the characters rewritten, and the report states both. The raw text kept with the
+  record is what was received. Go's decoder refuses such an event otherwise, in both of its
+  modes (section 9), and an event that cannot be decoded would be hidden from the analysis. A
+  value that already held the six characters of such a mark cannot be told apart afterwards; that
+  is accepted. The owner ruled this on 2026-11-16; the form of the mark is my call, taken from
+  winlogbeat (section 9).
 - **What a record carries.** The time the event was created. Its record number, as its position.
   As its kind, the provider's name together with the event's number. Named fields in two separate
   groups, so that their names cannot collide: the event's system fields (its level, the computer,
   the log it came from) and the event's own values. Each of the event's own values is known by
   its position, counting from one, and a value that the event names is known by that name as
   well. The whole XML as its raw text.
-- **The readable message.** It is carried for people and for the model to read, and is shown with
-  a cited event. It is never mined for patterns or values, because the same event can have a
+- **Which values an event has.** The children of `EventData`, in order. A `Binary` element is one
+  more value, in its place in that order, named `Binary` and kept as the text Windows gave. When
+  an event has `UserData` instead, its values are the innermost elements inside it, in document
+  order, each named by its element. An event with neither, or with an empty one, has no values. A
+  reference such as `%%2313` is kept as written: its words are in Windows' message, and asking
+  Windows to expand it would store a different record on Windows than anywhere else. When two
+  values of one event share a name, the name means the first of them **(my call)**; every value
+  still has its position. The rest is the owner's ruling of 2026-11-16.
+- **Windows' words.** Windows can say in words what an event means, and without them a value
+  named `param2` means nothing to a reader. They are fetched in two places only, never for every
+  event (the owner's ruling of 2026-11-16; section 9 has the cost that ruled out every event):
+  - *For the model, once per kind of event:* the message pattern Windows holds for that kind,
+    with a marker where each value goes and with no event's values in it. It is fetched for the
+    kinds the summary lists and goes into the summary beside each (section 7.5). Where Windows
+    holds no pattern for a kind, as it may not for older kinds of source, the message of one real
+    event of that kind stands in, labelled as an example and carrying that event's record number.
+    Where there is neither, the summary says that the kind has no words. The fallback to an
+    example is my addition; the owner accepted it with the rest.
+  - *For a person, for each event a finding cites:* that event's own message, fetched when the
+    report is made (section 7.10). If the event is gone from a live log by then, the report shows
+    its values and says that its message could not be fetched.
+
+  Windows' words are never mined for patterns or values, because the same event can have a
   different message, or none, on another machine or in another language. An event's kind and
-  values come from its XML alone, so the same XML always gives the same record.
+  values come from its XML alone, so the same XML always gives the same record. For the same
+  reason Windows' words are not an answer: no fact in a finding may point at them (section 7.9).
 - **Command line (my call).** `aigolog analyze --eventlog <name>` for a live log and
   `aigolog analyze <file>.evtx` for an exported one, both on Windows only; elsewhere they stop
   with a message that says so. Event XML in a file or on standard input works on every system.
 - **How much is read (my call).** A live log is read up to the newest event present when the read
-  begins; events that arrive later are part 2's business. A log can hold a very large number of
+  begins; events that arrive later are part 2's business. The reader makes this its own rule: it
+  notes the newest record number before it starts and asks for nothing beyond it (the owner's
+  ruling of 2026-11-16), and does not rest on how Windows treats a query that is already open. A
+  log can hold a very large number of
   events, so the read is also bounded: by default the most recent seven days, changed with
   `--since` and `--max-events`. The report's header states the bound that applied.
 - **Rights.** Reading some logs needs rights the user may not have; the Security log is the usual
-  case. When Windows refuses, aigolog says which log it could not read and why, and exits with a
-  distinct code. It never shows an empty log in place of a refusal.
+  case. When Windows refuses, aigolog says which log it could not read and why, names the two
+  remedies that were measured (an elevated prompt, or membership of the group Event Log Readers;
+  the owner's ruling of 2026-11-16), and exits with a distinct code. It never shows an empty log
+  in place of a refusal.
 - **Coverage.** The report states how many events were read and the time they span, because a log
   may no longer hold its older events.
 
@@ -374,7 +413,9 @@ machines"; that is not a statement about every Windows system.
   and Windows 11 the API returned an underscore in place of each. Tab and line feed came back as
   they were, `&`, `<` and `>` came back escaped, and Greek letters and a character outside the
   basic plane came back intact. Measured for those two characters, from one source, through the
-  API; what `wevtutil` prints for such an event was not captured.
+  API; what `wevtutil` prints for such an event was not captured. Go's own decoder, tried on the
+  Server 2022 capture, refused it in both of its modes, refused it again with the two characters
+  written as XML references, and accepted it once they were rewritten as text (section 9).
 - **The database.** A file written with an administrator's full rights in that account's own
   local application data folder took the folder's rules (the system, Administrators and the
   account, full control) and was owned by Administrators. The same account without elevation
@@ -385,34 +426,20 @@ machines"; that is not a statement about every Windows system.
   read and turned into XML in about 0.1 s; asking for each one's readable message as well took
   about 7 to 8 s. The script is not Go and the machine's load was not controlled.
 
-**Rules the measurements call for (proposals, not decided).** Each has alternatives. They go to
-the second model and then to the owner; none is settled by being written here.
-
-1. *When the readable message is fetched.* As written above, for every event. The lead above
-   suggests that may cost far more than reading the events. Alternatives: once per kind of
-   event, as an example; only for the events a finding cites; or a message pattern fetched once
-   per kind and filled in by the program, which is how winlogbeat does it (section 9).
-2. *How `Binary` and `UserData` become values.* Proposal: `Binary` is one more value, after the
-   others, named `Binary`, kept as the text Windows gave. The elements inside `UserData` are
-   values in document order, each named by its element.
-3. *Characters that XML forbids.* Proposal: before decoding, each is replaced by a visible mark;
-   the event is kept, the replacements are counted, and the report states the count. The raw
-   text is kept as received. Alternatives: refuse the event; decode with a reader that does not
-   check. An event that cannot be decoded is an event hidden from the analysis. winlogbeat
-   rewrites such characters as `\uNNNN` before it decodes (section 9).
-4. *References such as `%%2313`.* Proposal: the value is kept as written, and its meaning comes
-   from the readable message. Alternative: ask Windows to expand it when running on Windows,
-   which is what winlogbeat does (section 9); the record then differs from one decoded elsewhere.
-5. *What the refusal says.* Proposal: it names both remedies that were measured: an elevated
-   prompt, or membership of the group Event Log Readers.
-6. *Where a live read stops.* Proposal: the reader notes the newest record number before it
-   starts and asks for nothing beyond it, so the stop is its own rule and does not rest on how
-   Windows treats an open query.
+**The rules the measurements called for.** I listed six as proposals and put them, with a seventh
+on what to do with the captured events, to the second model and then to the owner. The owner
+accepted all seven as recommended ("yes", 2026-11-16). They are written into the points above:
+Windows' words (1), which values an event has (2 and 4), characters that XML forbids (3), what a
+refusal says (5), where a live read stops (6). The seventh: a set of the captured events is kept
+in `testdata/windows-events/` as test data. The second model and I recommended the same on six of
+the seven. On the first it began with "only for the events a finding cites" and changed to a
+pattern per kind after reading what the model is given before it cites anything.
 
 **Still not measured.** How fast events arrive through the API from Go. A desktop session where
 Windows asks for consent. Windows in a language other than English. Windows 10 and servers older
-than 2022. Reading a `.evtx` file on a machine other than the one that wrote it. None of the
-program's own behaviour: it does not exist yet.
+than 2022. Reading a `.evtx` file on a machine other than the one that wrote it. For how many
+kinds of event Windows holds a message pattern. What `wevtutil` prints for an event with a
+forbidden character. None of the program's own behaviour: it does not exist yet.
 
 **Text lines.**
 
@@ -576,6 +603,9 @@ Both are built by queries and are the same for the same input.
 - The sources: records, bytes, time span, share of records with a time, the miner's report on
   itself.
 - The patterns: text with slots marked, count, share, first and last time.
+- For each kind of Windows event listed: Windows' words for it, as a pattern or as a labelled
+  example (section 7.1). This is the one part of the summary that depends on the machine as well
+  as on the input, and it is not an answer.
 - For the most frequent patterns, per slot: its name or position, its type, the number of distinct
   values, the most frequent values with their counts and shares, and the range when it is numeric;
   and counts over time in coarse buckets.
@@ -756,18 +786,21 @@ rejected; a correct finding passes.
 ### 7.10 The report
 
 - Text for a terminal: a header (sources, records, time span and the anchor used for years, model,
-  where data went, the database's path and size), the digest, the findings in order of importance, the statements that
-  were not verified (section 7.9), and a footer (limits reached, token use).
+  where data went, the database's path and size), the digest, the findings in order of
+  importance, the statements that were not verified (section 7.9), and a footer (limits reached,
+  token use, and for a Windows log how many characters were rewritten in how many events, section
+  7.1).
 - Each finding: title and importance, statement, facts with their values, the cited lines with line
   numbers and up to three quoted, and the command that re-runs its answers. For a Windows log the
-  cited entries are events, shown by their record numbers, each with its readable message when
-  there is one.
+  cited entries are events, shown by their record numbers, each with its own message when
+  Windows has one, fetched when the report is made (section 7.1).
 - `--explain` adds, for each fact, the question behind its answer.
 - `--summary` prints the full summary.
 - `--json` gives the same content in one structure that carries: a format version; the sources; the
   model, the endpoint and where data went; the digest; each finding with its title, statement,
   importance, facts (label, answer identifier, cells, value, question) and lines (source, line
-  number, text); statements not verified, with the rule each broke; limits reached; token use; the
+  number, text; for a Windows event its record number, its values, and its message when there is
+  one); statements not verified, with the rule each broke; limits reached; token use; the
   database's path. Part 2's dashboard reads this.
 
 ### 7.11 Text from a log is untrusted
@@ -783,6 +816,11 @@ by the attacker. That text reaches the model and the user's screen, so:
 - **The screen.** Control characters and escape sequences are made harmless in everything printed
   to a terminal, whatever its source: log text, the model's words, labels. The model's words can
   carry what a log told the model to say.
+- **Windows events.** An event's values are written by whatever caused the event. Characters that
+  XML forbids are rewritten before decoding (section 7.1), so that such a value cannot make an
+  event vanish from the analysis. Windows' words come from files that whoever installed a program
+  put on the machine, and a message carries its event's values; pattern or message, they are log
+  text like any other and are passed and shown under the same rules.
 - **Commands.** No command line shown to the user contains text from a log (section 7.6).
 - **The store.** Values reach queries as parameters (section 7.4).
 - **Tools.** The tools only read the store. Nothing the model can call writes, deletes, or reaches
@@ -798,7 +836,10 @@ by the attacker. That text reaches the model and the user's screen, so:
 | The endpoint refuses a request because of the tools | Ask again once without tools; go on from the summary alone |
 | The configuration sets a request field that the program owns | Refused at start, with a message |
 | A live Windows log holds more than the bound | Read up to the bound; the header states it |
-| Windows refuses a log | Say which log and why; a distinct exit code; never an empty report |
+| Windows refuses a log | Say which log and why, and the two remedies; a distinct exit code; never an empty report |
+| An event holds characters XML forbids | They are rewritten before decoding and the event is kept; the report states how many (section 7.1) |
+| Windows has no words for a kind of event | The summary says so; the kind's values are counted as usual |
+| A cited event is gone from a live log when the report is made | Its values are shown from the store; the report says its message could not be fetched |
 | Model returns a malformed tool call or findings | One repair attempt, then treated as failing |
 | The model declines to answer | Say so; print the digest and the summary |
 | A limit is reached | Report what was found, say which limit was reached |
@@ -852,13 +893,16 @@ The tests:
   probes many paths, and a JSON-lines log, each with known truth. The query tools return exactly
   that truth, from a file and from standard input. A captured JSON export of the journal for a
   restart loop (section 9) gives the unit, the number of restarts and the order of events. The
-  decoder for Windows event XML is tested the same way, from events captured on Windows (A9). In
-  the virtual machine every name is made up, so nothing needs masking; anything captured on a
-  real machine has its identifying values masked first. The cases: an event whose values are named, one
-  whose values are not, and one with no message; and from a run of several events on standard
-  input, with and without an element enclosing them. Where Windows could not supply
-  an example, one written by hand from Microsoft's documented format stands in and is labelled as
-  made up. Two analyses run at the same time finish with
+  decoder for Windows event XML is tested the same way, from the events in
+  `testdata/windows-events/`, which were captured on GitHub's hosted Windows machines and hold
+  only names made there (section 9); anything captured on a real machine would have its
+  identifying values masked first. The cases: an event whose values are all named (4625); one
+  whose values are not (4242); one with a `Binary` value (7031); one with no values (4244); the
+  Server 2022 event that holds characters XML forbids, which must decode to a record with those
+  characters marked and counted; and a run of several events on standard input, with and without
+  an element enclosing them. Where no captured example exists, as for `UserData`, one written by
+  hand from Microsoft's documented format stands in and is labelled as made up. Two analyses run
+  at the same time finish with
   correct, separate databases. Five cases pin the rules for time (section 7.2): two files that
   run from December into January keep their order; lines that cross midnight on New Year's Eve a
   few seconds out of order keep their years; an `--as-of` date that is the day of the last record
@@ -877,7 +921,8 @@ The tests:
 - **A4. Findings, three logs, both kinds of model.** With one local model and with at least one
   cloud model, named for the run and reached through the configured endpoint, each shown finding
   passes the evidence rule, and a person checks the report against these lists. Through an
-  aggregator the run can compare two or three cloud models with one key. The third log is from another domain than the owner's two examples **(my call)**.
+  aggregator the run can compare two or three cloud models with one key. The third log is from
+  another domain than the owner's two examples **(my call)**.
   - sshd sample: (1) it says the machine is under automated password guessing; (2) it gives the
     number of failed attempts and of source addresses; (3) it names the busiest address; (4) it
     says whether any login succeeded.
@@ -887,8 +932,10 @@ The tests:
     number of requests and of distinct paths; (3) it names the client.
   - on Windows (A9 says where), the Security log and the System log, read through the Event
     Log reader, are checked against the first two lists: failed logons in place of failed
-    passwords, and a service that keeps stopping in place of the restart loop. How such events
-    are produced on that machine, if it has none, is agreed with the owner first.
+    passwords, and a service that keeps stopping in place of the restart loop. The events are
+    made there the way the capture script made them (section 9): failed logons for made-up
+    names, and a test service that exits by itself. On the owner's own machine nothing is made
+    without asking first.
 
   A model that fails is recorded as failing; the test exists to measure this. The cloud run spends
   money and needs the owner's key and the owner's go-ahead.
@@ -911,8 +958,10 @@ The tests:
 - **A9. Windows.** The test suite passes on Windows, the Event Log reader's own tests included,
   which can run nowhere else. A read of a log that Windows refuses, made from a prompt without
   elevation, reports the refusal and exits with the distinct code; it does not print an empty
-  report. A live log larger than the bound is read up to the bound. The Windows part of A4 is run
-  there with a model.
+  report. A live log larger than the bound is read up to the bound, and events written while a
+  read is under way are not in it. A kind of event for which Windows holds a pattern is given it;
+  a kind from a source with no publisher data is reported as having no words; a cited event is
+  shown with its own message. The Windows part of A4 is run there with a model.
 
   Where this is done, as the owner decided ("I accept your recommendation", after first choosing
   a handoff to their own machine):
@@ -973,15 +1022,16 @@ pinned tag, never built or run.
 | The development machine cannot accelerate a guest | It is itself a KVM guest (`systemd-detect-virt` prints `kvm`); no `vmx` or `svm` processor flag; no `/dev/kvm`. QEMU 10.2.1 is installed; 8 processors, 23 GiB of memory, 197 GB of disk free |
 | How much slower an emulated guest is there | The same busybox SHA-256 over 300 MB, twice each on 2026-11-16: 1.06 to 1.32 s natively, 15.0 to 18.0 s inside a QEMU guest without acceleration (4 processors), so 11 to 17 times slower. A small Linux guest reached its first program about 6.7 s after QEMU started. One compute-bound workload; disk and Windows were not timed; background load was not controlled |
 | GitHub's hosted Windows runners | GitHub's documentation, read 2026-11-16: "Use of the standard GitHub-hosted runners is free and unlimited on public repositories"; Windows labels for x64 (`windows-latest`, `windows-2025`, `windows-2022`) and ARM64 (`windows-11-arm`); "Windows virtual machines are configured to run as administrators with User Account Control (UAC) disabled". Measured there on 2026-11-16 (next rows): the registry value `EnableLUA` was 1, the account running the job had the built-in Administrator's identifier (ending -500) and ran at high integrity, and a second administrator account got a filtered token. So the account is unfiltered, but UAC is not switched off in the registry |
-| Where the Windows facts in section 7.1 were measured | The script `.github/probe/windows-events.ps1` on the branch `probe/windows-events` of this repository, run by the workflow beside it on the images `windows-2025`, `windows-2022` and `windows-11-arm`: run 43775716340 at commit `2b25519` and run 43776936291 at commit `5309a24`, both 2026-11-16. Each job uploaded `capture-<image>` holding `report.txt` (everything the script printed), the events as XML files, three `.evtx` files and the tallies. GitHub keeps those for five days; the branch is a throwaway. The script reads through .NET's `System.Diagnostics.Eventing.Reader`, which sits on the same API, and through `wevtutil`. A second model reviewed the script before the first run; its three claims of fact about Windows were each contradicted by the run |
+| Where the Windows facts in section 7.1 were measured | The script `.github/probe/windows-events.ps1` on the branch `probe/windows-events` of this repository, run by the workflow beside it on the images `windows-2025`, `windows-2022` and `windows-11-arm`: run 43775716340 at commit `2b25519` and run 43776936291 at commit `5309a24`, both 2026-11-16. Each job uploaded `capture-<image>` holding `report.txt` (everything the script printed), the events as XML files, three `.evtx` files and the tallies. GitHub keeps those for five days; the branch is a throwaway. A set of the files is kept in `testdata/windows-events/`, whose README lists them. The script reads through .NET's `System.Diagnostics.Eventing.Reader`, which sits on the same API, and through `wevtutil`. A second model reviewed the script before the first run; its three claims of fact about Windows were each contradicted by the run |
 | A failed logon on Windows | `security-4625-01.xml` to `-14.xml` in each capture: event 4625, provider `Microsoft-Windows-Security-Auditing`, 21 `Data` elements, all with a `Name`. The script made 14 failed logons and read back 14. Unknown user: `SubStatus` `0xc0000064`; wrong password: `0xc000006a`; `Status` `0xc000006d` in both. `FailureReason` is `%%2313` in the XML and in `wevtutil`'s rendered form; the words appear only in the message. Auditing of logon failures was already on, on all three images |
 | A failing service on Windows | `system-scm-7031-*.xml` and `system-scm-7034-*.xml`: provider `Service Control Manager`; 7031 has `param1` to `param5` (display name, count, delay in milliseconds, a code, the action in words) and a `Binary` element; 7034 has `param1`, `param2` and `Binary`. On the Server 2025 image, a test service that exited by itself gave 7034 with count 1, then 7031 with counts 2 to 6 once a restart action was set, then 7034 with count 7 once it was cleared; killing the Print Spooler twice gave 7031 with counts 1 and 2 and the display name "Print Spooler". A service whose program is missing or is not a service gave 7000 and 7009 |
 | Shapes of events, and messages | `survey-Application.tsv`, `survey-System.tsv`, `survey-Security.tsv` in each capture of the first run: the newest events of each log (up to 500), by provider, number, shape of the payload and whether a message could be produced. The counts quoted in section 7.1 leave out the script's own events. `report.txt`, section 6: the first line of the message of a 4625 and of a 7031 "appears in the plain event XML: False". Events 4242 to 4244, written from a source nobody registered, came back with unnamed `Data` and no message |
 | Who may read which log | `report.txt`, sections 5 and 5b of the second run. A member of Users only: `wevtutil qe Security /c:1 /f:xml` exits with 5 and prints "Failed to open event query. Access is denied."; through the API, `UnauthorizedAccessException` with result `0x80070005`; Application and System are read. An account in Administrators logged on interactively (token elevation type 3, Administrators "used for deny only", medium integrity): the same refusal. The same account's unfiltered token, and the standard user once in Event Log Readers: Security is read. `machine-gl-Security.txt`: the access rule is `O:BAG:SYD:(A;;0xf0005;;;SY)(A;;0x5;;;BA)(A;;0x1;;;S-1-5-32-573)` |
 | Bounding a read, and refusals | `report.txt`, section 7: `*[System[EventRecordID > N]]` returned the three newest records; `TimeCreated[timediff(@SystemTime) <= 3600000]` and `TimeCreated[@SystemTime >= '<time>Z']` returned counts; a malformed query: "The specified query is invalid"; a missing log: "The specified channel could not be found"; a text file named `.evtx`: "Insufficient information exists to identify the cause of failure". Second run: four events read from an open query, a fifth written afterwards, "returned 0 event(s)" |
 | Characters XML forbids, in an event | `application-probe-4245-awkward.xml` in each capture of the second run. `windows-2022`: the value holds the characters U+001B and U+0007 themselves, and .NET's `XmlReader` with character checking refuses the event ("hexadecimal value 0x1B, is an invalid character"). `windows-2025` and `windows-11-arm`: an underscore stands in place of each, and the reader accepts the event. On all three: tab and line feed as they were, `&amp;`, `&lt;`, `&gt;`, Greek letters and U+1F600 intact, an empty value as `<Data></Data>` |
+| Go's XML decoder and characters XML forbids | Measured on the development machine on 2026-11-16 with Go 1.27.4, `encoding/xml`, on `testdata/windows-events/application-probe-4245-awkward.windows-2022.xml`: as captured, `XML syntax error on line 2: illegal character code U+001B`, with `Strict` true and with `Strict` false; the same error with the two characters written as `&#x1B;` and `&#x7;`; accepted with them rewritten as the text `\u001b` and `\u0007`. The captures from the two newer images are accepted as they are |
 | A file written elevated, opened without elevation, on Windows | `report.txt`, section 5c of the second run: a file created with the account's unfiltered token under `C:\Users\<account>\AppData\Local`; owner `BUILTIN\Administrators`; `icacls` lists the system, Administrators and the account with full control; with the same account's filtered token, open for reading, open for reading and writing, create a file beside it and delete it were all allowed |
-| How a shipping reader treats the same three problems | `elastic/beats` `v9.5.6`, read, not built. Characters XML forbids: `winlogbeat/sys/winevent/event.go:52` decodes event XML through `NewSafeReader`, and `libbeat/common/encoding/xml/safe_reader.go:28-31` and `:71-74` rewrite invalid bytes and control characters other than white space as `\uNNNN` before Go's XML parser sees them. The message: `winlogbeat/sys/wineventlog/renderer.go:342-360` takes it from a pattern kept per kind of event and falls back to `EvtFormatMessage` only when the publisher's data is missing. References: `renderer.go:243-253` replaces each `%%` followed by digits with the publisher's message of that number, applied to an event's values at `renderer.go:236` and `:475` |
+| How a shipping reader treats the same three problems | `elastic/beats` `v9.5.6`, read, not built. Characters XML forbids: `winlogbeat/sys/winevent/event.go:52` decodes event XML through `NewSafeReader`, and `libbeat/common/encoding/xml/safe_reader.go:28-31` and `:71-74` rewrite invalid bytes and control characters other than white space as `\uNNNN` before Go's XML parser sees them. The message: `winlogbeat/sys/wineventlog/metadata_store.go:478-492` asks Windows once per kind of event for its message with placeholders in place of the values (`stringinserts.go:64-87`); `renderer.go:342-360` uses that pattern and falls back to `EvtFormatMessage` on the event itself when there is none, which `renderer.go:303-304` says can happen for older providers without manifests. References: `renderer.go:243-253` replaces each `%%` followed by digits with the publisher's message of that number, applied to an event's values at `renderer.go:236` and `:475` |
 | The cost of asking for each event's message (a lead) | `report.txt`, section 7, two runs each: 3,000 Security events read and rendered to XML in 86 to 118 ms on the two x64 images (both runs); with the message as well, 7,162 to 7,917 ms (second run). Through .NET on a shared machine, load not controlled; not a measurement of Go |
 | What the hosted Windows images carry | `report.txt`, section 1: Go 1.24.13, git, MinGW gcc and clang on the path, `CGO_ENABLED=1`, no `cl`. On the ARM64 image the gcc on the path is an x86_64 build. The SQLite port in this design needs Go 1.26 (row above), so a workflow has to install its own Go |
 | Windows under emulation on the development machine | Microsoft's Windows Server 2025 evaluation disk, started under QEMU without acceleration on 2026-11-16 at 00:22: the firmware started the boot loader within a minute; at about 30 minutes the screen read "Getting devices ready", at about 80 minutes "Getting ready"; no command prompt when it was stopped at 02:15, after 1 hour 53 minutes |
@@ -1144,8 +1194,11 @@ reporting, so that no personal address has to be published.
     image and agreed the time box, and on 2026-11-16 agreed ("yes") to a capture workflow on a
     throwaway branch, which ran on the hosted runners while the virtual machine was still
     starting. The owner then had the virtual machine stopped and its files cleared.
-24. The six proposals at the end of the Event Log part of section 7.1 are mine. They are not
-    decided: they go to the second model and then to the owner.
+24. Settled by the owner on 2026-11-16 ("yes" to all seven as recommended): the rules for the
+    Event Log reader that the measurements called for (section 7.1), and keeping a set of the
+    captured events as test data. Mine within them: the labelled example that stands in where
+    Windows holds no pattern for a kind; the form of the mark for a forbidden character; and that
+    a repeated name means the first value that has it.
 
 **Part 1 grew during review.** It was described to the owner as "the engine and the one-shot
 report, on text logs", with one command. Review added the things below. Each can be left out of
@@ -1174,6 +1227,8 @@ part 1 without touching goals G1 to G7 or section 7.11; the owner may cut any of
 - The configuration file's format, the exit codes, the wording of the report.
 - Which local model the tests use, chosen after looking at the development machine's hardware.
 - Which cloud models the acceptance run uses, agreed with the owner before it spends anything.
+- How the message pattern of a kind of Windows event is fetched (winlogbeat shows one way,
+  section 9), and how a cited event is fetched again by its record number.
 
 ## 14. What cannot be judged yet
 
@@ -1193,8 +1248,10 @@ part 1 without touching goals G1 to G7 or section 7.11; the owner may cut any of
 - Whether Windows is usable under emulation without acceleration on the development machine. A
   Windows Server 2025 guest reached its first-boot screens and, after about 80 minutes, had not
   reached a command prompt (section 9).
-- The Windows cases of A2 and A4. They can now be written from the captured events, and are
-  unfinished until the proposals at the end of the Event Log part of section 7.1 are decided.
+- The Windows cases of A2 and A4. They are written (section 8) and unproven until the program
+  exists.
+- For how many kinds of event Windows holds a message pattern, and so how often a labelled
+  example has to stand in. Not measured; one more run of the capture script could measure it.
 - Whether the facts in an event's own values are enough for a model to say what the event means
   when no readable message comes with it. The second model named moving this reader into part 1,
   before any real event had been seen, as the revision most likely to be regretted. Measured
