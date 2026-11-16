@@ -49,7 +49,11 @@ type Record struct {
 	Source int
 	// Line is the number of the record's first line, from 1.
 	Line int64
-	// Offset and Length are the record's position and size, in bytes.
+	// Offset and Length are the record's position and size, in bytes. For a
+	// UTF-8 input they are positions in the original input, and a byte-order
+	// mark counts. For a UTF-16 input they are positions in the text decoded
+	// to UTF-8, and the mark does not count. The Bytes method of the text
+	// reader always counts the bytes of the original input.
 	Offset, Length int64
 	// Stamp is the time of the record.
 	Stamp Stamp

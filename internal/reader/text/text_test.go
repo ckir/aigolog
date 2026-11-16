@@ -9,6 +9,7 @@ package text
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -248,5 +249,140 @@ func TestALoneCarriageReturnIsNotALineEnd(t *testing.T) {
 	_, recs := readAll(t, []byte("a\rb\nc\n"))
 	if want := []string{"a\rb", "c"}; !sameStrings(raws(recs), want) {
 		t.Errorf("got %q, want %q", raws(recs), want)
+	}
+}
+
+// smallCap is the cap on a record in the tests of the cap.
+const smallCap = 100
+
+func readAllCapped(t *testing.T, input string, maxRecord int) (*Reader, []record.Record) {
+	t.Helper()
+	r, err := newReader(strings.NewReader(input), maxRecord)
+	if err != nil {
+		t.Fatalf("newReader: %v", err)
+	}
+	return r, drain(t, r)
+}
+
+// indented returns the lines "  01xxx..." to "  NNxxx...", each 30 bytes, and
+// the text of them joined by newlines.
+func indented(n int) []string {
+	var lines []string
+	for i := 1; i <= n; i++ {
+		lines = append(lines, fmt.Sprintf("  %02d%s", i, strings.Repeat("x", 26)))
+	}
+	return lines
+}
+
+func TestAJoinedRecordIsCutAtTheCapAndNoByteIsLostOrRepeated(t *testing.T) {
+	stamped := "2026-01-05 10:00:01 start" // 25 bytes
+	cont := indented(10)                   // 30 bytes each
+	input := stamped + "\n" + strings.Join(cont, "\n") + "\n"
+	r, recs := readAllCapped(t, input, smallCap)
+	// The stamped line and lines 1-2 make 25+31+31 = 87 bytes; line 3 would make
+	// 118. So the records are: stamp+1-2 (87), 3-5 (92), 6-8 (92), 9-10 (61):
+	// 4 records, 3 of them started by a cut.
+	if len(recs) != 4 {
+		t.Fatalf("got %d records, want 4: %q", len(recs), raws(recs))
+	}
+	if r.Cut() != 3 {
+		t.Errorf("Cut() = %d, want 3", r.Cut())
+	}
+	for i, rec := range recs {
+		if len(rec.Raw) > smallCap {
+			t.Errorf("record %d holds %d bytes, over the cap", i+1, len(rec.Raw))
+		}
+	}
+	if got, want := strings.Join(raws(recs), "\n"), strings.TrimSuffix(input, "\n"); got != want {
+		t.Errorf("the records joined by newlines differ from the input:\n got %q\nwant %q", got, want)
+	}
+	if recs[0].Stamp.State != record.Resolved {
+		t.Errorf("first stamp = %+v, want Resolved", recs[0].Stamp)
+	}
+	for _, rec := range recs[1:] {
+		if rec.Stamp.State != record.NoStamp {
+			t.Errorf("a cut record has the stamp %+v, want NoStamp", rec.Stamp)
+		}
+	}
+	// The second record starts at the 4th line, after 26 + 31 + 31 bytes, and
+	// holds three lines: 30*3 + 2 newlines.
+	if got := recs[1]; got.Line != 4 || got.Offset != 88 || got.Length != 92 {
+		t.Errorf("second record: line %d, offset %d, length %d; want 4, 88, 92", got.Line, got.Offset, got.Length)
+	}
+	if r.Lines() != 11 {
+		t.Errorf("Lines() = %d, want 11", r.Lines())
+	}
+}
+
+func TestALineLongerThanTheCapIsNeverSplit(t *testing.T) {
+	long := strings.Repeat("y", 3*smallCap)
+	r, recs := readAllCapped(t, long+"\n", smallCap)
+	if len(recs) != 1 || recs[0].Raw != long || r.Cut() != 0 {
+		t.Errorf("alone: %d records, Cut() = %d", len(recs), r.Cut())
+	}
+	// After a stamped line it is a continuation that does not fit: it starts a
+	// record of its own, whole.
+	r, recs = readAllCapped(t, "2026-01-05 10:00:01 start\n  "+long+"\n", smallCap)
+	if len(recs) != 2 || recs[1].Raw != "  "+long || r.Cut() != 1 {
+		t.Errorf("after a stamped line: %d records, Cut() = %d", len(recs), r.Cut())
+	}
+	// A short line after the long one does not join it either.
+	_, recs = readAllCapped(t, "2026-01-05 10:00:01 start\n  "+long+"\n  short\n", smallCap)
+	if len(recs) != 3 || recs[2].Raw != "  short" {
+		t.Errorf("got %d records: %q", len(recs), raws(recs))
+	}
+}
+
+func TestWithTheRealCapNoRecordPassesOneMiB(t *testing.T) {
+	line := "  " + strings.Repeat("z", 97) // 99 bytes and a newline
+	var b strings.Builder
+	b.WriteString("2026-01-05 10:00:01 start\n")
+	for b.Len() < 3<<20 {
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	r, recs := readAllCapped(t, b.String(), MaxRecordBytes)
+	if r.Cut() < 2 {
+		t.Errorf("Cut() = %d, want at least 2", r.Cut())
+	}
+	if int(r.Cut()) != len(recs)-1 {
+		t.Errorf("Cut() = %d for %d records", r.Cut(), len(recs))
+	}
+	for i, rec := range recs {
+		if len(rec.Raw) > MaxRecordBytes {
+			t.Errorf("record %d holds %d bytes", i+1, len(rec.Raw))
+		}
+	}
+}
+
+func TestLeadingBlankLinesStartNoRecordButAreCounted(t *testing.T) {
+	r, recs := readAll(t, []byte("\n  \n\t\r\nhello\nworld\n"))
+	if want := []string{"hello", "world"}; !sameStrings(raws(recs), want) {
+		t.Fatalf("got %q, want %q", raws(recs), want)
+	}
+	// "\n" is 1 byte, "  \n" 3, "\t\r\n" 3: the first record is on line 4 at offset 7.
+	if recs[0].Line != 4 || recs[0].Offset != 7 || recs[0].Length != 5 {
+		t.Errorf("first record = %+v, want line 4, offset 7, length 5", recs[0])
+	}
+	if r.Lines() != 5 {
+		t.Errorf("Lines() = %d, want 5", r.Lines())
+	}
+
+	r, recs = readAll(t, []byte("\n\n2026-01-05 10:00:01 a\n\n2026-01-05 10:00:02 b\n"))
+	if want := []string{"2026-01-05 10:00:01 a\n", "2026-01-05 10:00:02 b"}; !sameStrings(raws(recs), want) {
+		t.Fatalf("with stamps: got %q, want %q", raws(recs), want)
+	}
+	if recs[0].Line != 3 || recs[0].Offset != 2 {
+		t.Errorf("with stamps: first record = %+v, want line 3, offset 2", recs[0])
+	}
+}
+
+func TestAnInputOfBlankLinesOnlyHasNoRecords(t *testing.T) {
+	r, recs := readAll(t, []byte("\n \t\n\r\n\n"))
+	if len(recs) != 0 {
+		t.Errorf("got %d records: %q", len(recs), raws(recs))
+	}
+	if r.Lines() != 4 {
+		t.Errorf("Lines() = %d, want 4", r.Lines())
 	}
 }

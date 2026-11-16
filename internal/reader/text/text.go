@@ -23,11 +23,14 @@ const (
 	// SampleBytes is how many bytes at the start of the text are looked at to
 	// find the layout of the stamps and NUL characters.
 	SampleBytes = 64 << 10
-	// SampleLines is how many lines at most the layout is worked out from.
-	// timeparse.Detect applies this limit itself, to the lines that can hold
-	// a stamp.
-	SampleLines = 100
 )
+
+// MaxRecordBytes is the most text that a record being assembled may hold: a
+// line that goes on from the record before is not joined to it when the record
+// would then be longer than this, and it starts a new record instead (see
+// Reader.Cut). A line that is longer than this by itself is never split: it is
+// kept whole, as a record of its own.
+const MaxRecordBytes = 1 << 20
 
 // parseSpan is how many bytes of a line are given to Layout.Parse, which looks
 // at the first bytes of a line only.
@@ -53,6 +56,12 @@ func (e *NotTextError) Error() string {
 // counts the bytes of the original input that have been read, the mark
 // included, and Length counts the original bytes of a line whose invalid UTF-8
 // is replaced.
+//
+// A blank line (empty, or of white space only) that comes when no record is
+// being assembled, such as at the start of the input, starts no record and is
+// skipped; it is counted in Lines and in the positions of what follows. A
+// record never holds more than MaxRecordBytes of text unless its first line is
+// longer.
 type Reader struct {
 	text     *bufio.Reader // the text, decoded if need be
 	encoding string
@@ -76,6 +85,9 @@ type Reader struct {
 	recEnd int64
 	stamp  record.Stamp
 
+	maxRecord int   // the cap on the text of a record; see MaxRecordBytes
+	cut       int64 // the records started because of the cap
+
 	err error // what ends the reading; returned after the pending record
 }
 
@@ -83,12 +95,17 @@ type Reader struct {
 // SampleBytes bytes, and returns a *NotTextError if there is a NUL in them,
 // in an input that is not UTF-16.
 func New(r io.Reader) (*Reader, error) {
+	return newReader(r, MaxRecordBytes)
+}
+
+// newReader is New with the cap on a record given; the tests use a small one.
+func newReader(r io.Reader, maxRecord int) (*Reader, error) {
 	br := bufio.NewReaderSize(r, SampleBytes)
 	head, err := br.Peek(3)
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
-	rd := &Reader{encoding: "utf-8"}
+	rd := &Reader{encoding: "utf-8", maxRecord: maxRecord}
 	var bigEndian bool
 	var mark int
 	switch {
@@ -176,6 +193,12 @@ func (r *Reader) Lines() int64 { return r.lines }
 // Bytes returns the number of bytes of the original input read so far.
 func (r *Reader) Bytes() int64 { return r.orig }
 
+// Cut returns the number of records that were started because the record
+// before them would have grown past MaxRecordBytes: the line that would have
+// been joined to it has no stamp of its own, so the record it starts has none
+// either.
+func (r *Reader) Cut() int64 { return r.cut }
+
 // Next returns the next record, and io.EOF after the last one. A record that
 // was assembled before a *NotTextError, or another error, is returned first.
 func (r *Reader) Next() (record.Record, error) {
@@ -194,12 +217,21 @@ func (r *Reader) Next() (record.Record, error) {
 		raw := trimCR(r.lineBuf)
 		line := clean(raw)
 		end := start + int64(len(raw))
+		if !r.have && len(bytes.TrimSpace(line)) == 0 {
+			continue // a blank line starts no record
+		}
 		stamp, parsed := r.parse(line)
 		if r.have && !r.startsRecord(line, parsed) {
-			r.recBuf = append(r.recBuf, '\n')
-			r.recBuf = append(r.recBuf, line...)
-			r.recEnd = end
-			continue
+			if len(r.recBuf) == 0 || len(r.recBuf)+1+len(line) <= r.maxRecord {
+				r.recBuf = append(r.recBuf, '\n')
+				r.recBuf = append(r.recBuf, line...)
+				r.recEnd = end
+				continue
+			}
+			// The record would grow past the cap: it ends here, and this
+			// line, which has no stamp, starts the next one.
+			stamp = record.Stamp{}
+			r.cut++
 		}
 		var out record.Record
 		had := r.have

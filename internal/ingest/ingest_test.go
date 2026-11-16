@@ -239,3 +239,31 @@ func TestMemoryDuringTheRunDoesNotGrowWithTheInput(t *testing.T) {
 }
 
 var _ record.Reader = (*text.Reader)(nil)
+
+func TestAnInputOfBlankLinesOnlyIsNothingToAnalyse(t *testing.T) {
+	d := newDB(t)
+	_, err := Run(ctx, d, []Input{in("blank.log", "\n  \n\t\n")}, Options{Now: time.Now(), Zone: time.UTC})
+	if !errors.Is(err, ErrNothingToAnalyse) {
+		t.Errorf("err = %v, want ErrNothingToAnalyse", err)
+	}
+}
+
+func TestRunCountsTheRecordsCutAtTheCap(t *testing.T) {
+	d := newDB(t)
+	line := "  " + strings.Repeat("z", 97) + "\n" // 100 bytes
+	big := "2026-01-05 10:00:01 start\n" + strings.Repeat(line, 3<<20/len(line))
+	res, err := Run(ctx, d, []Input{in("big.log", big), in("small.log", "2026-01-05 10:00:01 a\n"), in("big2.log", big)}, Options{Now: time.Now(), Zone: time.UTC})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b, c := res.Sources[0], res.Sources[1], res.Sources[2]
+	if a.CutRecords < 2 || b.CutRecords != 0 || c.CutRecords != a.CutRecords {
+		t.Errorf("cuts = %d, %d, %d; want at least 2, 0, and the first again", a.CutRecords, b.CutRecords, c.CutRecords)
+	}
+	if res.CutRecords != a.CutRecords+b.CutRecords+c.CutRecords {
+		t.Errorf("Result.CutRecords = %d, want the sum %d", res.CutRecords, a.CutRecords+b.CutRecords+c.CutRecords)
+	}
+	if a.Totals.Records != a.CutRecords+1 {
+		t.Errorf("records = %d for %d cuts", a.Totals.Records, a.CutRecords)
+	}
+}

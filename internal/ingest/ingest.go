@@ -58,6 +58,9 @@ type SourceReport struct {
 	ID     int
 	Source store.Source
 	Totals store.SourceTotals
+	// CutRecords is the number of records of the input that were started
+	// because the record before them reached text.MaxRecordBytes.
+	CutRecords int64
 }
 
 // Result is what Run did. When Run returns an error, Result holds what had
@@ -70,6 +73,8 @@ type Result struct {
 	Records int64
 	// Lines is the number of lines read, over all inputs.
 	Lines int64
+	// CutRecords is the sum of the CutRecords of the sources.
+	CutRecords int64
 }
 
 // InputError is an error that belongs to one input: it is not text, or it
@@ -118,6 +123,7 @@ func Run(ctx context.Context, db *store.DB, inputs []Input, o Options) (Result, 
 		}
 		res.Sources = append(res.Sources, rep)
 		res.Records += rep.Totals.Records
+		res.CutRecords += rep.CutRecords
 		if rep.ID != 0 {
 			stored = true
 		}
@@ -201,7 +207,7 @@ func runInput(ctx context.Context, db *store.DB, in Input, o Options, zone *time
 	if err != nil {
 		return SourceReport{}, rd.Lines(), err
 	}
-	return SourceReport{ID: id, Source: src, Totals: totals}, rd.Lines(), nil
+	return SourceReport{ID: id, Source: src, Totals: totals, CutRecords: rd.Cut()}, rd.Lines(), nil
 }
 
 // flush appends a batch, unless ctx is done.
