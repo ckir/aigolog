@@ -273,3 +273,165 @@ func TestRemoveDeletesTheRunsFiles(t *testing.T) {
 		}
 	}
 }
+
+// parentIsEmpty fails the test if the folder holds anything at all.
+func parentIsEmpty(t *testing.T, parent string) {
+	t.Helper()
+	ents, err := os.ReadDir(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		t.Errorf("%s holds %q, want nothing", parent, e.Name())
+	}
+}
+
+func TestCreateRefusesAFolderTheDriverWouldMisread(t *testing.T) {
+	// The check is made before anything is created, so it holds on Windows
+	// too, where a name with "?" could not be made anyway.
+	parent := t.TempDir()
+	d, err := Create(ctx, Options{Dir: filepath.Join(parent, "a?b")})
+	if err == nil {
+		d.Close()
+		t.Fatal("Create accepted a folder with a \"?\" in its path")
+	}
+	if !strings.Contains(err.Error(), `"?"`) {
+		t.Errorf("err = %v, want it to name the \"?\"", err)
+	}
+	parentIsEmpty(t, parent)
+
+	t.Run("file: prefix", func(t *testing.T) {
+		parent := t.TempDir()
+		t.Chdir(parent)
+		d, err := Create(ctx, Options{Dir: "file:x"})
+		if err == nil {
+			d.Close()
+			t.Fatal("Create accepted a folder that starts with \"file:\"")
+		}
+		parentIsEmpty(t, parent)
+	})
+}
+
+func TestOpenRefusesAPathTheDriverWouldMisread(t *testing.T) {
+	parent := t.TempDir()
+	if _, err := Open(ctx, filepath.Join(parent, "a?b", "x.db")); err == nil {
+		t.Error("Open accepted a path with a \"?\" in it")
+	}
+	parentIsEmpty(t, parent)
+
+	if runtime.GOOS == "windows" {
+		t.Skip("a name with \"?\" cannot be made on Windows")
+	}
+	// A real, complete database in a folder with a "?" in its name: without
+	// the check the driver cuts the path at the "?" and opens a stray file.
+	d := newDB(t)
+	d.MarkComplete(ctx)
+	d.Close()
+	data, err := os.ReadFile(d.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(parent, "a?b")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, filepath.Base(d.Path()))
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if o, err := Open(ctx, path); err == nil {
+		o.Close()
+		t.Error("Open accepted a path with a \"?\" in it that names a real database")
+	}
+	ents, err := os.ReadDir(parent)
+	if err != nil || len(ents) != 1 || ents[0].Name() != "a?b" {
+		t.Errorf("the parent holds %v, %v; want only the folder a?b (no stray file)", ents, err)
+	}
+}
+
+func TestResolveYearsPlacesYearsAcrossAChunkBoundary(t *testing.T) {
+	d := newDB(t)
+	other, _ := d.AddSource(ctx, Source{Name: "other", Format: "text", Encoding: "utf-8", Layout: "syslog", TimeKind: TimeWallYearInferred})
+	src, _ := d.AddSource(ctx, Source{Name: "s", Format: "text", Encoding: "utf-8", Layout: "syslog", TimeKind: TimeWallYearInferred})
+	if err := d.Append(ctx, []record.Record{{Source: other, Raw: "o", Stamp: record.Stamp{State: record.YearPending, Month: 12, Day: 31, NanoOfDay: int64(23 * time.Hour)}}}); err != nil {
+		t.Fatal(err)
+	}
+	const dec, jan = 5500, 500
+	var recs []record.Record
+	for i := 0; i < dec; i++ {
+		recs = append(recs, record.Record{Source: src, Raw: "x", Stamp: record.Stamp{State: record.YearPending, Month: 12, Day: 31, NanoOfDay: int64(23*time.Hour) + int64(i)}})
+	}
+	for i := 0; i < jan; i++ {
+		recs = append(recs, record.Record{Source: src, Raw: "x", Stamp: record.Stamp{State: record.YearPending, Month: 1, Day: 1, NanoOfDay: int64(time.Hour) + int64(i)}})
+	}
+	if err := d.Append(ctx, recs); err != nil {
+		t.Fatal(err)
+	}
+	anchor, _ := timeparse.ParseAsOf("2026-01-05")
+	if err := d.ResolveYears(ctx, src, timeparse.NewYearResolver(anchor)); err != nil {
+		t.Fatal(err)
+	}
+	var got []record.Stamp
+	if err := d.Records(ctx, src, func(id int64, r record.Record) error { got = append(got, r.Stamp); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != dec+jan {
+		t.Fatalf("read back %d records, want %d", len(got), dec+jan)
+	}
+	wrong := 0
+	for i, st := range got {
+		want := 2025
+		if i >= dec {
+			want = 2026
+		}
+		if st.State != record.Resolved || time.Unix(0, st.Nanos).UTC().Year() != want {
+			if wrong++; wrong <= 3 {
+				t.Errorf("record %d = %+v, want Resolved in %d", i+1, st, want)
+			}
+		}
+	}
+	if wrong > 3 {
+		t.Errorf("%d records in all are wrong", wrong)
+	}
+	var otherStates []record.StampState
+	d.Records(ctx, other, func(id int64, r record.Record) error { otherStates = append(otherStates, r.Stamp.State); return nil })
+	if len(otherStates) != 1 || otherStates[0] != record.YearPending {
+		t.Errorf("the record of the other source = %v, want it left YearPending", otherStates)
+	}
+}
+
+func TestCloseTwiceAndRemoveAfterCloseAreNotErrors(t *testing.T) {
+	d := newDB(t)
+	db, lock := d.Path(), strings.TrimSuffix(d.Path(), ".db")+".lock"
+	if err := d.Close(); err != nil {
+		t.Errorf("first Close = %v", err)
+	}
+	if err := d.Close(); err != nil {
+		t.Errorf("second Close = %v", err)
+	}
+	for _, p := range []string{db, lock} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("%s is gone after Close: %v", p, err)
+		}
+	}
+	if err := d.Remove(); err != nil {
+		t.Errorf("Remove after Close = %v", err)
+	}
+	for _, p := range []string{db, lock} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s still exists: %v", p, err)
+		}
+	}
+}
+
+func TestAFailedCreateLeavesNoFile(t *testing.T) {
+	dir := t.TempDir()
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	d, err := Create(cancelled, Options{Dir: dir})
+	if err == nil {
+		d.Close()
+		t.Fatal("Create with a cancelled context succeeded")
+	}
+	parentIsEmpty(t, dir)
+}

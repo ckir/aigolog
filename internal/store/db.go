@@ -107,6 +107,11 @@ func Create(ctx context.Context, opt Options) (*DB, error) {
 	if now == nil {
 		now = time.Now
 	}
+	// The generated name never holds a character the driver misreads, so the
+	// folder is what to check, and before anything is made.
+	if err := checkDriverPath(filepath.Join(opt.Dir, DatabaseName(time.Time{}, "00000000"))); err != nil {
+		return nil, fmt.Errorf("making the folder of the databases: %w", err)
+	}
 	if err := os.MkdirAll(opt.Dir, 0o700); err != nil {
 		return nil, fmt.Errorf("making the folder of the databases: %w", err)
 	}
@@ -197,6 +202,23 @@ func tryCreate(ctx context.Context, dir string, created time.Time) (d *DB, retry
 	return d, false, nil
 }
 
+// checkDriverPath refuses a path that the SQLite driver would misread when it
+// is given as the name of a database. Measured with modernc.org/sqlite
+// v1.62.0 (driver conn.go, newConn): a name is cut at its first "?" that is
+// not the first character, and what follows is taken as options, so the data
+// goes to a stray file; a name that starts with "file:" is read as a URI and
+// is not opened as the path it is. Other characters (# % & = ; ' " : a space,
+// letters outside ASCII, a leading dash) reach the file as they are.
+func checkDriverPath(path string) error {
+	if strings.Contains(path, "?") {
+		return fmt.Errorf(`the database path %q contains "?", which the SQLite driver reads as the start of options`, path)
+	}
+	if strings.HasPrefix(path, "file:") {
+		return fmt.Errorf(`the database path %q starts with "file:", which the SQLite driver reads as a URI`, path)
+	}
+	return nil
+}
+
 // connect opens the file at d.path and takes the one connection of d.
 func (d *DB) connect(ctx context.Context) error {
 	sqlDB, err := sql.Open(DriverName, d.path)
@@ -263,6 +285,9 @@ func (d *DB) abort(err error) error {
 // when another version of aigolog wrote the database, and ErrIncomplete when
 // the run that made it did not finish.
 func Open(ctx context.Context, path string) (*DB, error) {
+	if err := checkDriverPath(path); err != nil {
+		return nil, fmt.Errorf("opening the database: %w", err)
+	}
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("opening the database: %w", err)
 	}
