@@ -1,6 +1,7 @@
-ON HOLD since 2026-11-16. The owner decided that this work is done first in a Windows virtual
-machine on the development machine. Do not follow this file unless the owner starts a session
-with it for a last check on a real machine.
+ON HOLD since 2026-11-16. The owner first decided that this work would be done in a Windows
+virtual machine on the development machine; that machine was later stopped (see the update
+below). Do not follow this file unless the owner starts a session with it for a last check on a
+real machine.
 
 Update 2026-11-16: what items 1 to 5 ask was measured on GitHub's hosted Windows machines, with
 test events made there (design section 7.1). Nothing was captured on the owner's machine.

@@ -7,8 +7,9 @@ hosted Windows machines, with the owner's go-ahead, while the Windows virtual ma
 had chosen first was still starting; the owner then stopped that machine (section 8, A9). What
 was measured is in sections 7.1 and 9. The owner then ruled on the seven rules the measurements
 called for, after the second model and I had each recommended on them (section 7.1). The text
-added on 2026-11-16 has not yet been through the second model's review. The handoff files under
-`docs/handoff/` stay on hold.
+added on 2026-11-16 then went through three rounds of the second model's review. The third was
+short, looked only for faults that would mislead a builder, and found none. The handoff files
+under `docs/handoff/` stay on hold.
 Date: 2026-11-15.
 
 This document describes the first of two parts of aigolog. It is written so that a builder can
@@ -997,7 +998,8 @@ The tests:
     capture of 2026-11-16 did that, and showed that the refusal case can be exercised there: a
     test account without rights, and an administrator account that is not elevated, were both
     refused the Security log (section 7.1). The owner had accepted these machines as the
-    fallback; they became the place when the owner stopped the virtual machine.
+    fallback. With the virtual machine stopped they are where the work is done **(my call, for
+    the owner to confirm)**.
   - **What was tried first.** The owner had chosen a Windows virtual machine on the development
     machine, with a time box ("I accept your recommendation", after first choosing a handoff to
     their own machine). That machine cannot accelerate a guest (section 9). A Windows Server
@@ -1046,8 +1048,8 @@ pinned tag, never built or run.
 | The development machine cannot accelerate a guest | It is itself a KVM guest (`systemd-detect-virt` prints `kvm`); no `vmx` or `svm` processor flag; no `/dev/kvm`. QEMU 10.2.1 is installed; 8 processors, 23 GiB of memory, 197 GB of disk free |
 | How much slower an emulated guest is there | The same busybox SHA-256 over 300 MB, twice each on 2026-11-16: 1.06 to 1.32 s natively, 15.0 to 18.0 s inside a QEMU guest without acceleration (4 processors), so 11 to 17 times slower. A small Linux guest reached its first program about 6.7 s after QEMU started. One compute-bound workload; disk and Windows were not timed; background load was not controlled |
 | GitHub's hosted Windows runners | GitHub's documentation, read 2026-11-16: "Use of the standard GitHub-hosted runners is free and unlimited on public repositories"; Windows labels for x64 (`windows-latest`, `windows-2025`, `windows-2022`) and ARM64 (`windows-11-arm`); "Windows virtual machines are configured to run as administrators with User Account Control (UAC) disabled". Measured there on 2026-11-16 (next rows): the registry value `EnableLUA` was 1, the account running the job had the built-in Administrator's identifier (ending -500) and ran at high integrity, and a second administrator account got a filtered token. So the account is unfiltered, but UAC is not switched off in the registry |
-| Where the Windows facts in section 7.1 were measured | The script `.github/probe/windows-events.ps1` on the branch `probe/windows-events` of this repository, run by the workflow beside it on the images `windows-2025`, `windows-2022` and `windows-11-arm`: run 43775716340 at commit `2b25519` and run 43776936291 at commit `5309a24`, both 2026-11-16. Each job uploaded `capture-<image>` holding `report.txt` (everything the script printed), the events as XML files, three `.evtx` files and the tallies. GitHub keeps those for five days; the branch is a throwaway. A set of the files is kept in `testdata/windows-events/`, whose README lists them. These are facts about those images on that date; GitHub rebuilds its images often. The script reads through .NET's `System.Diagnostics.Eventing.Reader`, which sits on the same API, and through `wevtutil`. A second model reviewed the script before the first run; its three claims of fact about Windows were each contradicted by the run |
-| A failed logon on Windows | `security-4625-01.xml` to `-14.xml` in each capture: event 4625, provider `Microsoft-Windows-Security-Auditing`, 21 `Data` elements, all with a `Name`. The script made 14 failed logons and read back 14. Unknown user: `SubStatus` `0xc0000064`; wrong password: `0xc000006a`; `Status` `0xc000006d` in both. `FailureReason` is `%%2313` in the XML and in `wevtutil`'s rendered form; the words appear only in the message. Auditing of logon failures was already on, on all three images |
+| Where the Windows facts in section 7.1 were measured | The script `.github/probe/windows-events.ps1` on the branch `probe/windows-events` of this repository, run by the workflow beside it on the images `windows-2025`, `windows-2022` and `windows-11-arm`: run 43775716340 at commit `2b25519` and run 43776936291 at commit `5309a24`, both 2026-11-16. Each job uploaded `capture-<image>` holding `report.txt` (everything the script printed), the events as XML files, three `.evtx` files and the tallies. GitHub keeps those for five days; the branch is a throwaway. A set of the files is kept in `testdata/windows-events/`, whose README lists them. These are facts about those images on that date. The script reads through .NET's `System.Diagnostics.Eventing.Reader`, which sits on the same API, and through `wevtutil`. A second model reviewed the script before the first run; its three claims of fact about Windows were each contradicted by the run |
+| A failed logon on Windows | `security-4625-01.xml` to `-14.xml` in each capture: event 4625, provider `Microsoft-Windows-Security-Auditing`, 21 `Data` elements, all with a `Name`. The script made 14 failed logons and read back 14. Unknown user: `SubStatus` `0xc0000064`; wrong password: `0xc000006a`; `Status` `0xc000006d` in both. `FailureReason` is `%%2313` in the XML and in `wevtutil`'s rendered form; the words appear only in the message. `IpAddress` and `IpPort` are `-`: these logons were made on the machine itself. Auditing of logon failures was already on, on all three images |
 | A failing service on Windows | `system-scm-7031-*.xml` and `system-scm-7034-*.xml`: provider `Service Control Manager`; 7031 has `param1` to `param5` (display name, count, delay in milliseconds, a code, the action in words) and a `Binary` element; 7034 has `param1`, `param2` and `Binary`. On the Server 2025 image, a test service that exited by itself gave 7034 with count 1, then 7031 with counts 2 to 6 once a restart action was set, then 7034 with count 7 once it was cleared; killing the Print Spooler twice gave 7031 with counts 1 and 2 and the display name "Print Spooler". A service whose program is missing or is not a service gave 7000 and 7009 |
 | Shapes of events, and messages | `survey-Application.tsv`, `survey-System.tsv`, `survey-Security.tsv` in each capture of the first run: the newest events of each log (up to 500), by provider, number, shape of the payload and whether a message could be produced. The counts quoted in section 7.1 leave out the script's own events. `report.txt`, section 6: the first line of the message of a 4625 and of a 7031 "appears in the plain event XML: False". Events 4242 to 4244, written from a source nobody registered, came back with unnamed `Data` and no message |
 | Who may read which log | `report.txt`, sections 5 and 5b of the second run. A member of Users only: `wevtutil qe Security /c:1 /f:xml` exits with 5 and prints "Failed to open event query. Access is denied."; through the API, `UnauthorizedAccessException` with result `0x80070005`; Application and System are read. An account in Administrators logged on interactively (token elevation type 3, Administrators "used for deny only", medium integrity): the same refusal. The same account's unfiltered token, and the standard user once in Event Log Readers: Security is read. `machine-gl-Security.txt`: the access rule is `O:BAG:SYD:(A;;0xf0005;;;SY)(A;;0x5;;;BA)(A;;0x1;;;S-1-5-32-573)` |
@@ -1218,7 +1220,8 @@ reporting, so that no personal address has to be published.
     image and agreed the time box, and on 2026-11-16 agreed ("yes") to a capture workflow on a
     throwaway branch, which ran on the hosted runners while the virtual machine was still
     starting. The owner then had the virtual machine stopped and its files cleared, so the
-    hosted runners are where the Windows work is done (section 8, A9).
+    hosted runners are where the Windows work is done (my call, for the owner to confirm;
+    section 8, A9).
 24. Settled by the owner on 2026-11-16 ("yes" to all seven as recommended): the rules for the
     Event Log reader that the measurements called for (section 7.1), and keeping a set of the
     captured events as test data. Mine within them: the labelled example that stands in where
@@ -1271,8 +1274,8 @@ part 1 without touching goals G1 to G7 or section 7.11; the owner may cut any of
 - How the program itself behaves on Windows, until its tests run there. What Windows hands a
   reader has been measured (section 7.1); the program does not exist yet.
 - Whether Windows is usable under emulation without acceleration on the development machine. A
-  Windows Server 2025 guest reached its first-boot screens and, after about 80 minutes, had not
-  reached a command prompt (section 9).
+  Windows Server 2025 guest reached its first-boot screens and had not reached a command prompt
+  when it was stopped after 1 hour 53 minutes (section 9).
 - The Windows cases of A2 and A4. They are written (section 8) and unproven until the program
   exists.
 - Fetching a message pattern without values from Windows. This project has not tried it; the

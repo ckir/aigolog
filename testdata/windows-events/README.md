@@ -2,10 +2,13 @@
 
 Real events, captured on 2026-11-16 on GitHub's hosted Windows machines by the throwaway script
 `.github/probe/windows-events.ps1` (branch `probe/windows-events`, commit `5309a24`, workflow run
-43776936291). The script made every one of these events itself on those disposable machines:
-failed logons for made-up names, a test service that exits by itself, the Print Spooler killed
-twice, and events written from a source nobody registered. The machine names, account names and
-account identifiers in them belong to GitHub's machines, not to anyone's own computer.
+43776936291). The script caused the events in the single-event files on those disposable
+machines: failed logons for made-up names, a test service that exits by itself, the Print
+Spooler killed twice, and events written from a source nobody registered. One exported file,
+`system-scm-since-start.evtx`, holds every Service Control Manager event of those minutes, so it
+also has a few the machine made as a consequence or by itself, such as a service starting. The
+machine names, account names and account identifiers in all of them belong to GitHub's
+machines, not to anyone's own computer.
 
 Unless a file name says otherwise, the files come from the `windows-2025` image (Windows Server
 2025, build 26100). The design, section 7.1 and section 9, says what was measured with them.
