@@ -47,6 +47,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			return exitcode.Failure
 		}
 		fmt.Fprintf(stdout, "sqlite %s\n", engine)
+		for _, part := range platformParts() {
+			fmt.Fprintln(stdout, part)
+		}
 		return exitcode.OK
 	default:
 		fmt.Fprintf(stderr, "aigolog: unknown command %q\n", args[0])

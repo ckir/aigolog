@@ -102,3 +102,20 @@ func TestRunVersionPrintsTheStoreEngine(t *testing.T) {
 		t.Errorf("line 3 = %q, want something like \"sqlite 3.54.1\"", lines[2])
 	}
 }
+
+func TestRunVersionNamesTheEventLogAPIOnWindowsOnly(t *testing.T) {
+	code, out, errOut := run("version")
+	if code != exitcode.OK {
+		t.Fatalf("code = %d, want %d; stderr: %s", code, exitcode.OK, errOut)
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if runtime.GOOS == "windows" {
+		if len(lines) != 4 || lines[3] != "eventlog api ok" {
+			t.Errorf("on Windows want 4 lines, the last \"eventlog api ok\"; got:\n%s", out)
+		}
+		return
+	}
+	if len(lines) != 3 {
+		t.Errorf("want 3 lines off Windows; got %d:\n%s", len(lines), out)
+	}
+}
