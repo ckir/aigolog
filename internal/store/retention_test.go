@@ -8,6 +8,7 @@ package store
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -172,5 +173,47 @@ func TestSweepRemovesAnOrphanLockFileAndLeavesForeignFilesAlone(t *testing.T) {
 func TestSweepOfAMissingFolderIsNotAnError(t *testing.T) {
 	if _, err := Sweep(t.TempDir()+"/nope", Policy{All: true, Now: now}); err != nil {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestAnOrphanLockStaysHeldWhileSweepDeletesIt(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot delete a file that this process holds open, so there the fallback applies")
+	}
+	dir := t.TempDir()
+	orphan := dir + "/20260101T000000Z-deadbeef.lock"
+	if err := os.WriteFile(orphan, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls, held := 0, false
+	removeFile = func(path string) error {
+		if path == orphan {
+			calls++
+			f, err := os.OpenFile(path, os.O_RDWR, 0)
+			if err != nil {
+				t.Errorf("opening the orphan lock: %v", err)
+			} else {
+				locked, err := tryLockFile(f)
+				if err != nil {
+					t.Errorf("locking the orphan lock: %v", err)
+				}
+				held = !locked
+				if locked {
+					unlockFile(f)
+				}
+				f.Close()
+			}
+		}
+		return os.Remove(path)
+	}
+	t.Cleanup(func() { removeFile = os.Remove })
+	if _, err := Sweep(dir, Policy{MaxAge: time.Hour, MaxTotalBytes: 1 << 30, Now: now}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || !held {
+		t.Errorf("the delete was called %d times, lock held at that moment: %v; want once, held", calls, held)
+	}
+	if exists(orphan) {
+		t.Error("the orphan lock was not removed")
 	}
 }

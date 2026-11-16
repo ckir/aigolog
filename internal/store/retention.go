@@ -33,7 +33,11 @@ type Info struct {
 	Size    int64     // the size of the .db file, in bytes
 	// State is "complete", "incomplete" (the run did not finish), "running"
 	// (another process holds the lock of the run) or "unreadable" (the file
-	// could not be read as a database of aigolog).
+	// could not be read as a database of aigolog, or its lock file could not
+	// be tested, for example for want of permission). Sweep removes an
+	// unreadable database whose lock could be tested and was free, like an
+	// incomplete one; it does not remove one whose lock could not be tested,
+	// because it might be held.
 	State string
 	// Records and Version are read from the database. For a running database
 	// the file is not opened, so Records is 0 and Version is empty; the same
@@ -285,8 +289,11 @@ func removeRun(path string, lock *os.File) (gone bool, err error) {
 
 // Sweep removes the databases in dir that the policy says to remove, and the
 // lock files that no database owns. A database whose run is in progress (its
-// lock is held) is never touched. An incomplete or unreadable database is
-// removed; a complete one when p.All, or when it is older than p.MaxAge; then,
+// lock is held) is never touched. An incomplete database is removed, and so is
+// an unreadable one whose lock could be tested and is free; an entry whose lock
+// file cannot be tested (for example, permission denied) is shown as
+// unreadable but is not removed, because it might be held. A complete database
+// is removed when p.All, or when it is older than p.MaxAge; then,
 // if the .db files that remain add up to more than p.MaxTotalBytes, the oldest
 // databases that are not running are removed until they do not. Files whose
 // names are not ours, and anything that is not a regular file, are left alone.
@@ -406,8 +413,17 @@ func sweepSize(kept []Info, res *SweepResult, limit int64, errs *[]error) []Info
 	return still
 }
 
+// removeFile deletes the lock file of removeOrphanLock; a test replaces it.
+var removeFile = os.Remove
+
 // removeOrphanLock deletes a lock file that has no database, if nobody holds
-// it.
+// it. The file is deleted while the lock is still held: if the lock were
+// released first, a run that made the file a moment ago (Create makes it, then
+// locks it) could take the lock and have its file deleted under it. Where a
+// file that this process holds open cannot be deleted (Windows), the handle is
+// closed and the delete is tried once more. If that fails too, the file is left
+// and this is not an error: it is in use by someone, or not ours to remove, and
+// the next sweep tries again.
 func removeOrphanLock(path string) error {
 	lock, _, err := acquire(path)
 	if err != nil {
@@ -416,9 +432,11 @@ func removeOrphanLock(path string) error {
 	if lock == nil {
 		return nil // held by a run that is starting, or gone
 	}
-	release(lock)
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("removing the lock file %s: %w", path, err)
+	if err := removeFile(path); err == nil || errors.Is(err, fs.ErrNotExist) {
+		release(lock)
+		return nil
 	}
+	release(lock)
+	removeFile(path)
 	return nil
 }
