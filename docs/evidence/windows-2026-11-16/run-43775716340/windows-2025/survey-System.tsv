@@ -1,0 +1,119 @@
+count	provider	number	shape	message
+   239	Service Control Manager	7036	EventData:2-named+Binary	message
+    29	Microsoft-Windows-HttpService	112	EventData:5-named	message
+    17	Microsoft-Windows-Kernel-General	16	EventData:4-named	message
+    13	Microsoft-Windows-FilterManager	6	EventData:6-named	message
+    10	Microsoft-Windows-Hyper-V-VmSwitch	233	EventData:6-named	message
+     9	Microsoft-Windows-Hyper-V-VmSwitch	291	EventData:7-named	message
+     8	Microsoft-Windows-HttpService	113	EventData:6-named	message
+     7	Service Control Manager	7031	EventData:5-named+Binary	message
+     6	Microsoft-Windows-Hyper-V-VmSwitch	292	EventData:5-named	message
+     6	Microsoft-Windows-Hyper-V-VmSwitch	232	EventData:12-named	message
+     4	Service Control Manager	7045	EventData:5-named	message
+     4	Service Control Manager	7040	EventData:4-named	message
+     4	Microsoft-Windows-Kernel-Processor-Power	55	EventData:9-named	message
+     4	Microsoft-Windows-Hyper-V-VmSwitch	71	EventData:10-named	message
+     4	Microsoft-Windows-Hyper-V-VmSwitch	69	EventData:10-named	message
+     4	Microsoft-Windows-Hyper-V-VmSwitch	234	EventData:4-named	message
+     3	Service Control Manager	7034	EventData:2-named+Binary	message
+     3	Service Control Manager	7000	EventData:2-named+Binary	message
+     3	Microsoft-Windows-Time-Service	37	EventData:1-named	message
+     3	Microsoft-Windows-Kernel-General	24	EventData:5-named	message
+     3	Microsoft-Windows-Hyper-V-VmSwitch	9	EventData:6-named	message
+     3	Microsoft-Windows-Hyper-V-VmSwitch	7	EventData:4-named	message
+     3	Microsoft-Windows-Hyper-V-VmSwitch	67	EventData:10-named	message
+     3	Microsoft-Windows-Hyper-V-VmSwitch	264	EventData:10-named	message
+     3	Microsoft-Windows-HttpService	114	EventData:5-named	message
+     2	VfpExt	7036	EventData:2-unnamed+Binary	message
+     2	User32	1074	EventData:7-named	message
+     2	Service Control Manager	7026	EventData:1-named	message
+     2	Microsoft-Windows-Time-Service	35	EventData:3-named	message
+     2	Microsoft-Windows-Ntfs	98	EventData:3-named	message
+     2	Microsoft-Windows-Kernel-General	15	EventData:4-named	message
+     2	Microsoft-Windows-Kernel-General	1	EventData:10-named	message
+     2	Microsoft-Windows-Hyper-V-VmSwitch	62	EventData:6-named	message
+     2	Microsoft-Windows-Hyper-V-Netvsc	51	EventData:3-named	message
+     2	Microsoft-Windows-HttpService	111	EventData:5-named	message
+     2	Microsoft-Windows-DHCPv6-Client	51057	EventData:1-named	message
+     2	Microsoft-Windows-Dhcp-Client	50036	EventData:no-Data	message
+     1	volmgr	46	EventData:1-unnamed+Binary	message
+     1	Virtual Disk Service	4	EventData:1-unnamed	message
+     1	Virtual Disk Service	3	EventData:1-unnamed	message
+     1	User32	1075	EventData:2-named	message
+     1	Service Control Manager	7009	EventData:2-named+Binary	message
+     1	mlx5	379	EventData:9-unnamed+Binary	message
+     1	mlx5	370	EventData:6-unnamed+Binary	message
+     1	mlx5	290	EventData:3-unnamed+Binary	message
+     1	mlx5	289	EventData:3-unnamed+Binary	message
+     1	mlx5	286	EventData:5-unnamed+Binary	message
+     1	mlx5	285	EventData:6-unnamed+Binary	message
+     1	mlx5	262	EventData:12-unnamed+Binary	message
+     1	mlx5	13	EventData:3-unnamed+Binary	message
+     1	Microsoft-Windows-WinRM	10149	EventData:no-Data	message
+     1	Microsoft-Windows-WinRM	10148	EventData:no-Data	message
+     1	Microsoft-Windows-Winlogon	7001	EventData:2-named	message
+     1	Microsoft-Windows-Wininit	25	EventData:5-named	message
+     1	Microsoft-Windows-Wininit	24	EventData:4-named	message
+     1	Microsoft-Windows-Wininit	23	EventData:4-named	message
+     1	Microsoft-Windows-Wininit	19	EventData:5-named	message
+     1	Microsoft-Windows-Wininit	18	EventData:no-Data	message
+     1	Microsoft-Windows-Wininit	14	EventData:3-named	message
+     1	Microsoft-Windows-WindowsUpdateClient	44	EventData:3-named	message
+     1	Microsoft-Windows-WindowsUpdateClient	43	EventData:3-named	message
+     1	Microsoft-Windows-WindowsUpdateClient	19	EventData:4-named	message
+     1	Microsoft-Windows-WAS	5211	EventData:2-named+Binary	message
+     1	Microsoft-Windows-TPM-WMI	1281	EventData:no-Data	message
+     1	Microsoft-Windows-Kernel-Power	577	EventData:3-named	message
+     1	Microsoft-Windows-Kernel-Power	172	EventData:2-named	message
+     1	Microsoft-Windows-Kernel-Power	109	EventData:3-named	message
+     1	Microsoft-Windows-Kernel-General	25	EventData:8-named	message
+     1	Microsoft-Windows-Kernel-General	20	EventData:4-named	message
+     1	Microsoft-Windows-Kernel-General	13	EventData:1-named	message
+     1	Microsoft-Windows-Kernel-General	12	EventData:7-named	message
+     1	Microsoft-Windows-Kernel-Boot	32	EventData:1-named	message
+     1	Microsoft-Windows-Kernel-Boot	27	EventData:2-named	message
+     1	Microsoft-Windows-Kernel-Boot	25	EventData:1-named	message
+     1	Microsoft-Windows-Kernel-Boot	247	EventData:2-named	message
+     1	Microsoft-Windows-Kernel-Boot	238	EventData:3-named	message
+     1	Microsoft-Windows-Kernel-Boot	20	EventData:4-named	message
+     1	Microsoft-Windows-Kernel-Boot	18	EventData:1-named	message
+     1	Microsoft-Windows-Kernel-Boot	153	EventData:3-named	message
+     1	Microsoft-Windows-IsolatedUserMode	5	EventData:4-named	message
+     1	Microsoft-Windows-IsolatedUserMode	3	EventData:2-named	message
+     1	Microsoft-Windows-IsolatedUserMode	1	EventData:4-named	message
+     1	Microsoft-Windows-Hyper-V-VmSwitch	5	EventData:4-named	message
+     1	Microsoft-Windows-Hyper-V-VmSwitch	277	EventData:7-named	message
+     1	Microsoft-Windows-Hyper-V-Netvsc	59	EventData:5-named	message
+     1	Microsoft-Windows-Hyper-V-Netvsc	54	EventData:6-named	message
+     1	Microsoft-Windows-Hyper-V-Netvsc	52	EventData:3-named	message
+     1	Microsoft-Windows-Hyper-V-Netvsc	50	EventData:5-named	message
+     1	Microsoft-Windows-Hyper-V-Netvsc	46	EventData:2-named	message
+     1	Microsoft-Windows-Hyper-V-Netvsc	3	EventData:2-named	message
+     1	Microsoft-Windows-Hyper-V-Netvsc	11	EventData:2-named	message
+     1	Microsoft-Windows-Hyper-V-Netvsc	1	EventData:3-named	message
+     1	Microsoft-Windows-Hyper-V-Hypervisor	2	EventData:1-named	message
+     1	Microsoft-Windows-Hyper-V-Hypervisor	165	EventData:4-named	message
+     1	Microsoft-Windows-Hyper-V-Hypervisor	157	EventData:no-Data	message
+     1	Microsoft-Windows-Hyper-V-Hypervisor	156	EventData:8-named	message
+     1	Microsoft-Windows-Hyper-V-Hypervisor	129	EventData:7-named	message
+     1	Microsoft-Windows-Hyper-V-Hypervisor	1	EventData:no-Data	message
+     1	Microsoft-Windows-HttpService	117	EventData:5-named	message
+     1	Microsoft-Windows-HAL	16	EventData:no-Data	message
+     1	Microsoft-Windows-GroupPolicy	1501	EventData:5-named	message
+     1	Microsoft-Windows-FilterManager	1	EventData:6-named	message
+     1	Microsoft-Windows-DistributedCOM	10016	EventData:11-named	message
+     1	Microsoft-Windows-Directory-Services-SAM	16983	EventData:no-Data	message
+     1	Microsoft-Windows-Directory-Services-SAM	16977	EventData:3-named	message
+     1	Microsoft-Windows-Directory-Services-SAM	16962	EventData:1-named	message
+     1	Microsoft-Windows-DHCPv6-Client	51047	EventData:1-named	message
+     1	Microsoft-Windows-DHCPv6-Client	51046	EventData:no-Data	message
+     1	Microsoft-Windows-Dhcp-Client	50106	EventData:no-Data	message
+     1	Microsoft-Windows-Dhcp-Client	50105	EventData:no-Data	message
+     1	Microsoft-Windows-Dhcp-Client	50104	EventData:no-Data	message
+     1	Microsoft-Windows-Dhcp-Client	50103	EventData:no-Data	message
+     1	Microsoft-Windows-Dhcp-Client	50037	EventData:1-named	message
+     1	LsaSrv	6156	EventData:5-named	message
+     1	EventLog	6013	EventData:7-unnamed+Binary	message
+     1	EventLog	6009	EventData:5-unnamed	message
+     1	EventLog	6006	EventData:no-Data+Binary	message
+     1	EventLog	6005	EventData:no-Data+Binary	message

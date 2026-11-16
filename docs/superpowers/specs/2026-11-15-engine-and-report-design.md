@@ -341,7 +341,9 @@ chose how it reads: "A Windows' own API" (section 6.6).
     Windows gives a message. It is labelled as an example, carries that event's record number,
     and is shown with that event's values beside it by position, so that the particulars of the
     one event can be told from the wording of the kind. Where there is neither, the model is
-    told that the kind has no words. The fallback to an example is my addition; the owner
+    told that the kind has no words. On the machines measured a pattern was found for most kinds
+    and for both of the owner's examples, so the example is the exception (section 9). The
+    fallback to an example is my addition; the owner
     accepted it with the rest, and the second model warns that a model may still carry a name
     from an example into a statement about other events (section 7.9 says what the evidence rule
     does not catch).
@@ -435,6 +437,18 @@ machines"; that is not a statement about every Windows system.
   could open it for reading and writing, create a file beside it, and delete it.
 - **An exported file.** Events saved to a `.evtx` file with `wevtutil` were read back through the
   API on the same machine, with their messages.
+- **Message patterns.** A third run asked Windows for the pattern of a kind of event, with `%1`,
+  `%2` and so on where the values go, in two ways: from the provider's own data through the
+  Event Log API, and from the message file that the registry names for the source, read as data.
+  Both of the owner's examples have one. The failed logon (4625) came the first way. The service
+  events (7031, 7034, 7036, 7000) were not in the provider's data and came the second way: "The
+  %1 service terminated unexpectedly. It has done this %2 time(s). ...". In both, the number in
+  a marker is the position of the value. On the three machines a pattern was found for every
+  kind among the 500 newest Security events, for 88 of 91 to 125 of 127 kinds among the 500
+  newest System events, and for 27 of 36 to 38 of 48 kinds in the Application log; five of the
+  Application kinds without one were the script's own source, which has none. The script matched
+  kinds by number and version only, so these counts are a floor. Listing one provider's kinds
+  took at most 98 ms through .NET (a lead, as below).
 - **Two leads, not measurements.** Through .NET on a shared machine, 3,000 Security events were
   read and turned into XML in about 0.1 s; asking for each one's readable message as well took
   about 7 to 8 s. The script is not Go and the machine's load was not controlled.
@@ -450,11 +464,10 @@ pattern per kind after reading what the model is given before it cites anything.
 
 **Still not measured.** How fast events arrive through the API from Go. A desktop session where
 Windows asks for consent. Windows in a language other than English. Windows 10 and servers older
-than 2022. Reading a `.evtx` file on a machine other than the one that wrote it. Whether a message
-pattern without values can be fetched from Windows the way winlogbeat does it, and for how many
-kinds of event: this project has not tried it, and the rule rests on winlogbeat's source (section
-9). What `wevtutil` prints for an event with a forbidden character. None of the program's own
-behaviour: it does not exist yet.
+than 2022. Reading a `.evtx` file on a machine other than the one that wrote it. Fetching message
+patterns from Go: the third run fetched them through .NET and through Windows' older message call,
+not through the calls winlogbeat makes. What `wevtutil` prints for an event with a forbidden
+character. None of the program's own behaviour: it does not exist yet.
 
 **Text lines.**
 
@@ -889,9 +902,8 @@ Numbers come from section 9. What "done" means **(my call)**:
 - On Windows nothing that is required may be skipped: the Event Log reader's own
   tests run, the refusal case is exercised from a prompt without elevation, and the Windows part
   of A4 is run with a model.
-- windows/arm64 is built. A hosted ARM64 machine exists and ran the capture script (section 9),
-  so the suite can be run there as well; until the owner says that it must pass there, it is not
-  required to. The record of A9 says
+- The suite must also pass on windows/arm64, on GitHub's hosted ARM64 Windows machine (the owner,
+  2026-11-16: "the test suite must also pass on the hosted ARM64 machine"). The record of A9 says
   which targets were run.
 - In A4 at least one cloud model, named before the run starts, must pass the checklists. For the
   local model the run must complete, and every finding it shows must pass the evidence rule.
@@ -985,11 +997,12 @@ The tests:
   elevation, reports the refusal, names the two remedies and exits with the distinct code; it does
   not print an empty report. A live log larger than the bound is read up to the bound, and events
   written while a read is under way are not in it. A kind of event for which Windows holds a
-  pattern is given it; a kind from a source with no publisher data is reported as having no words;
-  a cited event is shown with its own message. The Windows part of A4 is run there with a model.
-  The test for where a read stops writes events after the reader has noted the newest record number
-  and before it opens its query, which the reader lets a test do, and finds none of them in the
-  result; without the rule they would be in it.
+  pattern is given it, the kinds behind the owner's two examples (4625 and 7031) among them; a kind
+  from a source with no publisher data is reported as having no words; a cited event is shown with
+  its own message. The Windows part of A4 is run there with a model. The test for where a read
+  stops writes events after the reader has noted the newest record number and before it opens its
+  query, which the reader lets a test do, and finds none of them in the result; without the rule
+  they would be in it.
 
   Where this is done:
   - **GitHub's hosted Windows machines**, x64 and ARM64, free for a public repository (section
@@ -998,8 +1011,9 @@ The tests:
     capture of 2026-11-16 did that, and showed that the refusal case can be exercised there: a
     test account without rights, and an administrator account that is not elevated, were both
     refused the Security log (section 7.1). The owner had accepted these machines as the
-    fallback. With the virtual machine stopped they are where the work is done **(my call, for
-    the owner to confirm)**.
+    fallback. With the virtual machine stopped they are where the work is done. That was my
+    call; the owner, told of it, had this text pushed and required the suite to pass on the
+    hosted ARM64 machine as well.
   - **What was tried first.** The owner had chosen a Windows virtual machine on the development
     machine, with a time box ("I accept your recommendation", after first choosing a handoff to
     their own machine). That machine cannot accelerate a guest (section 9). A Windows Server
@@ -1048,7 +1062,7 @@ pinned tag, never built or run.
 | The development machine cannot accelerate a guest | It is itself a KVM guest (`systemd-detect-virt` prints `kvm`); no `vmx` or `svm` processor flag; no `/dev/kvm`. QEMU 10.2.1 is installed; 8 processors, 23 GiB of memory, 197 GB of disk free |
 | How much slower an emulated guest is there | The same busybox SHA-256 over 300 MB, twice each on 2026-11-16: 1.06 to 1.32 s natively, 15.0 to 18.0 s inside a QEMU guest without acceleration (4 processors), so 11 to 17 times slower. A small Linux guest reached its first program about 6.7 s after QEMU started. One compute-bound workload; disk and Windows were not timed; background load was not controlled |
 | GitHub's hosted Windows runners | GitHub's documentation, read 2026-11-16: "Use of the standard GitHub-hosted runners is free and unlimited on public repositories"; Windows labels for x64 (`windows-latest`, `windows-2025`, `windows-2022`) and ARM64 (`windows-11-arm`); "Windows virtual machines are configured to run as administrators with User Account Control (UAC) disabled". Measured there on 2026-11-16 (next rows): the registry value `EnableLUA` was 1, the account running the job had the built-in Administrator's identifier (ending -500) and ran at high integrity, and a second administrator account got a filtered token. So the account is unfiltered, but UAC is not switched off in the registry |
-| Where the Windows facts in section 7.1 were measured | The script `.github/probe/windows-events.ps1` on the branch `probe/windows-events` of this repository, run by the workflow beside it on the images `windows-2025`, `windows-2022` and `windows-11-arm`: run 43775716340 at commit `2b25519` and run 43776936291 at commit `5309a24`, both 2026-11-16. Each job uploaded `capture-<image>` holding `report.txt` (everything the script printed), the events as XML files, three `.evtx` files and the tallies. GitHub keeps those for five days; the branch is a throwaway. A set of the files is kept in `testdata/windows-events/`, whose README lists them. These are facts about those images on that date. The script reads through .NET's `System.Diagnostics.Eventing.Reader`, which sits on the same API, and through `wevtutil`. A second model reviewed the script before the first run; its three claims of fact about Windows were each contradicted by the run |
+| Where the Windows facts in section 7.1 were measured | The script `.github/probe/windows-events.ps1` on the branch `probe/windows-events` of this repository, run by the workflow beside it on the images `windows-2025`, `windows-2022` and `windows-11-arm`: run 43775716340 at commit `2b25519`, run 43776936291 at commit `5309a24` and run 43786199757 at commit `23edb36`, all 2026-11-16. Each job uploaded `capture-<image>` holding `report.txt` (everything the script printed), the events as XML files, three `.evtx` files and the tallies. GitHub keeps those for five days; the branch is a throwaway. A set of the event files is kept in `testdata/windows-events/`, whose README lists them, and every run's `report.txt` with its tallies is kept in `docs/evidence/windows-2026-11-16/` (the owner, 2026-11-16: "Keep the two runs' full reports in the repo as evidence"; the third run's were added with them). These are facts about those images on that date. The script reads through .NET's `System.Diagnostics.Eventing.Reader`, which sits on the same API, and through `wevtutil`. A second model reviewed the script before the first run; its three claims of fact about Windows were each contradicted by the run |
 | A failed logon on Windows | `security-4625-01.xml` to `-14.xml` in each capture: event 4625, provider `Microsoft-Windows-Security-Auditing`, 21 `Data` elements, all with a `Name`. The script made 14 failed logons and read back 14. Unknown user: `SubStatus` `0xc0000064`; wrong password: `0xc000006a`; `Status` `0xc000006d` in both. `FailureReason` is `%%2313` in the XML and in `wevtutil`'s rendered form; the words appear only in the message. `IpAddress` and `IpPort` are `-`: these logons were made on the machine itself. Auditing of logon failures was already on, on all three images |
 | A failing service on Windows | `system-scm-7031-*.xml` and `system-scm-7034-*.xml`: provider `Service Control Manager`; 7031 has `param1` to `param5` (display name, count, delay in milliseconds, a code, the action in words) and a `Binary` element; 7034 has `param1`, `param2` and `Binary`. On the Server 2025 image, a test service that exited by itself gave 7034 with count 1, then 7031 with counts 2 to 6 once a restart action was set, then 7034 with count 7 once it was cleared; killing the Print Spooler twice gave 7031 with counts 1 and 2 and the display name "Print Spooler". A service whose program is missing or is not a service gave 7000 and 7009 |
 | Shapes of events, and messages | `survey-Application.tsv`, `survey-System.tsv`, `survey-Security.tsv` in each capture of the first run: the newest events of each log (up to 500), by provider, number, shape of the payload and whether a message could be produced. The counts quoted in section 7.1 leave out the script's own events. `report.txt`, section 6: the first line of the message of a 4625 and of a 7031 "appears in the plain event XML: False". Events 4242 to 4244, written from a source nobody registered, came back with unnamed `Data` and no message |
@@ -1058,6 +1072,7 @@ pinned tag, never built or run.
 | Go's XML decoder and characters XML forbids | Measured on the development machine on 2026-11-16 with Go 1.27.4, `encoding/xml`, on `testdata/windows-events/application-probe-4245-awkward.windows-2022.xml`: as captured, `XML syntax error on line 2: illegal character code U+001B`, with `Strict` true and with `Strict` false; the same error with its three forbidden characters (U+001B twice, U+0007 once) written as `&#x1B;` and `&#x7;`; accepted with them rewritten as the text `\u001b` and `\u0007`. The captures from the two newer images are accepted as they are |
 | A file written elevated, opened without elevation, on Windows | `report.txt`, section 5c of the second run: a file created with the account's unfiltered token under `C:\Users\<account>\AppData\Local`; owner `BUILTIN\Administrators`; `icacls` lists the system, Administrators and the account with full control; with the same account's filtered token, open for reading, open for reading and writing, create a file beside it and delete it were all allowed |
 | How a shipping reader treats the same three problems | `elastic/beats` `v9.5.6`, read, not built. Characters XML forbids: `winlogbeat/sys/winevent/event.go:52` decodes event XML through `NewSafeReader`, and `libbeat/common/encoding/xml/safe_reader.go:28-31` and `:71-74` rewrite invalid bytes and control characters other than white space as `\uNNNN` before Go's XML parser sees them. The message: `winlogbeat/sys/wineventlog/metadata_store.go:478-492` asks Windows once per kind of event for its message with placeholders in place of the values (`stringinserts.go:64-87`); `renderer.go:342-360` uses that pattern and falls back to `EvtFormatMessage` on the event itself when there is none, which `renderer.go:303-304` says can happen for older providers without manifests. References: `renderer.go:243-253` replaces each `%%` followed by digits with the publisher's message of that number, applied to an event's values at `renderer.go:236` and `:475` |
+| Message patterns for kinds of event | `report.txt`, section 7b of the third run, and `patterns-Application.tsv`, `patterns-System.tsv`, `patterns-Security.tsv`. Way 1: .NET's `ProviderMetadata`, which lists a provider's kinds and their message text through the Event Log API. Way 2: the `EventMessageFile` the registry names for the source, opened as data, with `FormatMessage` told to leave the inserts alone. 4625 and 4624: way 1 ("ROUTE: provider data"; 488 kinds listed in 57 ms on `windows-2025`). 7031, 7034, 7036, 7000: not among the 43 kinds way 1 listed for `Service Control Manager`; way 2 from `services.exe`. The source nobody registered: none, as expected. Kinds with a pattern, of the kinds among the newest events (500 at most): Security 20 of 20 on all three; System 120 of 126, 88 of 91, 125 of 127; Application 38 of 48, 31 of 41, 27 of 36 (`windows-2025`, `windows-2022`, `windows-11-arm`). Kinds were matched by number and version only |
 | The cost of asking for each event's message (a lead) | `report.txt`, section 7, two runs each: 3,000 Security events read and rendered to XML in 86 to 118 ms on the two x64 images (both runs); with the message as well, 7,162 to 7,917 ms (second run). Through .NET on a shared machine, load not controlled; not a measurement of Go |
 | What the hosted Windows images carry | `report.txt`, section 1: Go 1.24.13, git, MinGW gcc and clang on the path, `CGO_ENABLED=1`, no `cl`. On the ARM64 image the gcc on the path is an x86_64 build. The SQLite port in this design needs Go 1.26 (row above), so a workflow has to install its own Go |
 | Windows under emulation on the development machine | Microsoft's Windows Server 2025 evaluation disk, started under QEMU without acceleration on 2026-11-16 at 00:22: the firmware started the boot loader within a minute; at about 30 minutes the screen read "Getting devices ready", at about 80 minutes "Getting ready"; no command prompt when it was stopped at 02:15, after 1 hour 53 minutes |
@@ -1198,7 +1213,8 @@ reporting, so that no personal address has to be published.
 15. What "done" means (section 8): all of A1 to A11, the Windows ones included and none of them
     skipped; at least one cloud model, named beforehand, must pass the checklists of A4; a run
     with the local model must complete and obey the evidence rule, while its checklist result is
-    only measured; windows/arm64 is built but not run. With no key for a cloud endpoint, the
+    only measured. windows/arm64 was at first to be built and not run; the owner has since
+    required the suite to pass there too (section 8). With no key for a cloud endpoint, the
     local model must pass instead.
 16. Each run makes a new database; nothing is reused between runs.
 17. Settled by the owner, no longer my call: the Event Log reader is in part 1, and it reads
@@ -1220,7 +1236,7 @@ reporting, so that no personal address has to be published.
     image and agreed the time box, and on 2026-11-16 agreed ("yes") to a capture workflow on a
     throwaway branch, which ran on the hosted runners while the virtual machine was still
     starting. The owner then had the virtual machine stopped and its files cleared, so the
-    hosted runners are where the Windows work is done (my call, for the owner to confirm;
+    hosted runners are where the Windows work is done (my call, which the owner let stand;
     section 8, A9).
 24. Settled by the owner on 2026-11-16 ("yes" to all seven as recommended): the rules for the
     Event Log reader that the measurements called for (section 7.1), and keeping a set of the
@@ -1255,8 +1271,9 @@ part 1 without touching goals G1 to G7 or section 7.11; the owner may cut any of
 - The configuration file's format, the exit codes, the wording of the report.
 - Which local model the tests use, chosen after looking at the development machine's hardware.
 - Which cloud models the acceptance run uses, agreed with the owner before it spends anything.
-- How the message pattern of a kind of Windows event is fetched (winlogbeat shows one way,
-  section 9), and how a cited event is fetched again by its record number.
+- How the message pattern of a kind of Windows event is fetched, and how a cited event is fetched
+  again by its record number. Two ways of fetching a pattern were measured and the service
+  events needed the second (section 9); winlogbeat shows the first in Go.
 
 ## 14. What cannot be judged yet
 
@@ -1278,10 +1295,9 @@ part 1 without touching goals G1 to G7 or section 7.11; the owner may cut any of
   when it was stopped after 1 hour 53 minutes (section 9).
 - The Windows cases of A2 and A4. They are written (section 8) and unproven until the program
   exists.
-- Fetching a message pattern without values from Windows. This project has not tried it; the
-  rule rests on winlogbeat's source (section 9). Nor is it known for how many kinds of event
-  Windows holds one, and so how often a labelled example has to stand in. One more run of the
-  capture script could measure both.
+- Fetching message patterns from Go. A run of the capture script fetched them through .NET and
+  through Windows' older message call, for both of the owner's examples and for most kinds on
+  three machines (section 9). The calls from Go are unproven until the program exists.
 - Whether the facts in an event's own values are enough for a model to say what the event means
   when no readable message comes with it. The second model named moving this reader into part 1,
   before any real event had been seen, as the revision most likely to be regretted. Measured
