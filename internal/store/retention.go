@@ -41,7 +41,8 @@ type Info struct {
 	// of aigolog: the file is empty, SQLite says it is not a database or that
 	// it is corrupt, or its meta table is missing or has no complete row. An
 	// unreadable database for which the program does not know (busy, an I/O
-	// error, no permission, a lock that cannot be tested) is kept.
+	// error, no permission, a lock that cannot be tested) is kept; under
+	// Policy.All it is removed too, unless its lock could not be tested.
 	State string
 	// Records and Version are read from the database. For a running database
 	// the file is not opened, so Records is 0 and Version is empty; the same
@@ -51,7 +52,9 @@ type Info struct {
 
 	// unsure is set by inspect when the state is "unreadable" and the reason
 	// is not a proof that the file is not a finished database: the entry is
-	// never removed by a policy other than All.
+	// never removed by a policy other than All, and under All only when its
+	// lock could be tested (a lock that could not be tested keeps the entry
+	// whatever the policy). It does not count toward MaxTotalBytes.
 	unsure bool
 }
 
@@ -212,9 +215,11 @@ const (
 )
 
 // provenNotOurs reports whether an error from opening or reading a database
-// shows that the file is not a database of aigolog. Any other error (busy, an
-// I/O error, no permission, too many open files, a cancelled context, a table
-// or column that a later version renamed) shows nothing about the file.
+// shows that the file is not a database of aigolog: SQLite says it is not a
+// database or is corrupt, or its meta table is missing (a meta table that a
+// later version renamed is missing too). Any other error (busy, an I/O error,
+// no permission, too many open files, a cancelled context, a column that a
+// later version renamed) shows nothing about the file.
 func provenNotOurs(err error) bool {
 	if errors.Is(err, errNoMeta) {
 		return true
@@ -347,7 +352,10 @@ func removeRun(path string, lock *os.File) (gone bool, err error) {
 // cannot be opened or read for a reason that says nothing about the file: busy,
 // an I/O error, permission denied, too many open files) is shown as unreadable
 // but is kept, and the size limit never removes it, because it may be a
-// complete database or a live run; with p.All it is removed like the others.
+// complete database or a live run; its size does not count toward
+// p.MaxTotalBytes. With p.All an unsure entry whose lock could
+// be tested and was free is removed like the others; one whose lock could not
+// be tested is still kept.
 // A complete database is removed when p.All, or when it is older than p.MaxAge;
 // then, if the .db files that remain add up to more than p.MaxTotalBytes, the
 // oldest databases that are not running are removed until they do not. Files
@@ -426,7 +434,11 @@ func Sweep(dir string, p Policy) (SweepResult, error) {
 }
 
 // sweepSize removes the oldest of kept, one at a time, while the .db files of
-// the running and the kept databases add up to more than limit. It returns the
+// the running and the kept databases add up to more than limit. A kept
+// database that is unsure (it cannot be read, so the program does not know
+// what it is) does not count toward the total and is never removed here, so
+// that a database that cannot be read cannot make the limit evict good ones.
+// It returns the
 // databases that are still kept; one that has become running is moved to
 // res.Running, and one that is removed to res.Removed.
 func sweepSize(kept []Info, res *SweepResult, limit int64, errs *[]error) []Info {
@@ -435,7 +447,9 @@ func sweepSize(kept []Info, res *SweepResult, limit int64, errs *[]error) []Info
 		total += i.Size
 	}
 	for _, i := range kept {
-		total += i.Size
+		if !i.unsure {
+			total += i.Size
+		}
 	}
 	sort.Slice(kept, func(i, j int) bool {
 		if !kept[i].Created.Equal(kept[j].Created) {

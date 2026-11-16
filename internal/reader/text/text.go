@@ -222,14 +222,17 @@ func (r *Reader) Next() (record.Record, error) {
 		}
 		stamp, parsed := r.parse(line)
 		if r.have && !r.startsRecord(line, parsed) {
-			if len(r.recBuf) == 0 || len(r.recBuf)+1+len(line) <= r.maxRecord {
+			if len(r.recBuf)+1+len(line) <= r.maxRecord {
 				r.recBuf = append(r.recBuf, '\n')
 				r.recBuf = append(r.recBuf, line...)
 				r.recEnd = end
 				continue
 			}
 			// The record would grow past the cap: it ends here, and this
-			// line, which has no stamp, starts the next one.
+			// line, which has no stamp, starts the next one. That holds when
+			// the pending record is empty too (a cut that fell on an empty
+			// line): the empty record is kept, no byte is lost, and the line
+			// is not joined to it.
 			stamp = record.Stamp{}
 			r.cut++
 		}

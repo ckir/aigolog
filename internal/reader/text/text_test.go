@@ -386,3 +386,40 @@ func TestAnInputOfBlankLinesOnlyHasNoRecords(t *testing.T) {
 		t.Errorf("Lines() = %d, want 4", r.Lines())
 	}
 }
+
+// checkCapInvariant fails the test when a record of a capped reader is longer
+// than the cap and is not a single line, or when the records, joined by
+// newlines, are not the input: no byte lost or repeated.
+func checkCapInvariant(t *testing.T, recs []record.Record, input string, maxRecord int) {
+	t.Helper()
+	for i, rec := range recs {
+		if len(rec.Raw) > maxRecord && strings.Contains(rec.Raw, "\n") {
+			t.Errorf("record %d holds %d bytes in several lines, over the cap of %d", i+1, len(rec.Raw), maxRecord)
+		}
+	}
+	if got, want := strings.Join(raws(recs), "\n"), strings.TrimSuffix(input, "\n"); got != want {
+		t.Errorf("the records joined by newlines differ from the input:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestACutThatLandsOnAnEmptyLineDoesNotLetALongLineJoinIt(t *testing.T) {
+	// The stamped line (25 bytes) and the 74-byte line make exactly 100 bytes,
+	// the cap, so the empty line after them is the one that is cut. It starts a
+	// record of its own, and the 300-byte line after it must not be joined to
+	// that empty record.
+	input := "2026-01-05 10:00:01 start\n" +
+		"  " + strings.Repeat("a", 72) + "\n" +
+		"\n" +
+		"  " + strings.Repeat("b", 298) + "\n" +
+		"  tail\n"
+	r, recs := readAllCapped(t, input, smallCap)
+	checkCapInvariant(t, recs, input, smallCap)
+	if r.Cut() < 1 {
+		t.Errorf("Cut() = %d, want at least 1", r.Cut())
+	}
+	for _, rec := range recs {
+		if strings.Contains(rec.Raw, strings.Repeat("b", 298)) && rec.Raw != "  "+strings.Repeat("b", 298) {
+			t.Errorf("the long line was joined to something: %q", rec.Raw)
+		}
+	}
+}

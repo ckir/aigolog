@@ -482,6 +482,8 @@ func TestCreateNamesTheFolderNotAPlaceholderPath(t *testing.T) {
 	if !strings.Contains(err.Error(), dir) || strings.Contains(err.Error(), "00010101T000000Z") {
 		t.Errorf("err = %v; want it to name the folder %q and no placeholder file name", err, dir)
 	}
+	// A relative folder: a regression would make it in the working directory.
+	t.Chdir(t.TempDir())
 	d, err = Create(ctx, Options{Dir: "file:x"})
 	if err == nil {
 		d.Close()

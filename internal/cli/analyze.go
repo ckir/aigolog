@@ -158,6 +158,21 @@ func endedByDoubleDash(fs *flag.FlagSet, consumed []string) bool {
 	return false
 }
 
+// signalsToCatch returns the signals that interruptContext catches: SIGINT
+// and SIGTERM, except one that the process was started with ignored (a
+// background job of a script, nohup). Catching such a signal would take over
+// from the ignoring, and then the second one, after stop, would still be
+// ignored; an ignored signal stays ignored. ignored is signal.Ignored.
+func signalsToCatch(ignored func(os.Signal) bool) []os.Signal {
+	var sigs []os.Signal
+	for _, s := range []os.Signal{os.Interrupt, syscall.SIGTERM} {
+		if !ignored(s) {
+			sigs = append(sigs, s)
+		}
+	}
+	return sigs
+}
+
 // interruptContext returns a context that ends at the first SIGINT or SIGTERM
 // (Ctrl-C on Windows). At that moment it stops catching signals, so that a
 // second one ends the process at once, which matters for a run that is blocked
@@ -166,7 +181,11 @@ func endedByDoubleDash(fs *flag.FlagSet, consumed []string) bool {
 // goroutine that says so, which says nothing when the command ended without a
 // signal.
 func interruptContext(w io.Writer) (ctx context.Context, stop func()) {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	sigs := signalsToCatch(signal.Ignored)
+	if len(sigs) == 0 {
+		return context.Background(), func() {}
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), sigs...)
 	finished := make(chan struct{})
 	exited := make(chan struct{})
 	go func() {
@@ -182,7 +201,7 @@ func interruptContext(w io.Writer) (ctx context.Context, stop func()) {
 		default:
 		}
 		cancel() // from here a second signal has its default effect
-		fmt.Fprintln(w, "aigolog: interrupting; press Ctrl-C again to stop at once")
+		fmt.Fprintln(w, "aigolog: signal received; send it again to stop at once")
 	}()
 	return ctx, func() {
 		close(finished)
@@ -242,13 +261,22 @@ func analyze(env Env, args []string) int {
 		return exitcode.Failure
 	}
 	now := env.Now()
-	_, err = store.Sweep(dir, store.Policy{
+	swept, err := store.Sweep(dir, store.Policy{
 		MaxAge:        time.Duration(cfg.KeepDays) * 24 * time.Hour,
 		MaxTotalBytes: cfg.MaxTotalBytes,
 		Now:           now,
 	})
 	for _, e := range splitErrors(err) {
 		warn(env.Stderr, e)
+	}
+	unreadable := 0
+	for _, k := range swept.Kept {
+		if k.State == "unreadable" {
+			unreadable++
+		}
+	}
+	if unreadable > 0 {
+		report(env.Stderr, fmt.Sprintf(`warning: %d kept databases could not be read and were left alone; "aigolog list" shows them and "aigolog clean" removes them`, unreadable))
 	}
 
 	if ctx.Err() != nil {
@@ -257,6 +285,11 @@ func analyze(env Env, args []string) int {
 	}
 	db, err := store.Create(ctx, store.Options{Dir: dir, Now: env.Now})
 	if err != nil {
+		if ctx.Err() != nil {
+			// A signal during Create: it has removed its own files.
+			report(env.Stderr, "interrupted")
+			return exitcode.Failure
+		}
 		report(env.Stderr, fmt.Sprintf("cannot write the database in %s: %v", dir, err))
 		return exitcode.StorageUnavailable
 	}
@@ -370,7 +403,7 @@ func printSummary(w io.Writer, res ingest.Result, path string, size int64, kept 
 			fmt.Fprintf(w, "  years: worked out from the anchor %s, %s\n", summaryTime(s.Source.AnchorNanos), kind)
 		}
 		if s.CutRecords > 0 {
-			fmt.Fprintf(w, "  note: %d joined records were cut at 1 MiB of text; the lines after each cut start new records\n", s.CutRecords)
+			fmt.Fprintf(w, "  note: joined text was cut at 1 MiB %d times; each cut started a new record\n", s.CutRecords)
 		}
 	}
 	if kept {

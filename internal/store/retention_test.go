@@ -363,3 +363,53 @@ func TestSweepRemovesAZeroLengthDatabaseAndAnEmptyMetaDatabase(t *testing.T) {
 		t.Errorf("result = %+v; want four removed", res)
 	}
 }
+
+func TestAnUnreadableDatabaseDoesNotCountTowardTheSizeLimit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes do not deny access on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can open a file whatever its mode")
+	}
+	dir := t.TempDir()
+	big := made(t, dir, now.Add(-3*time.Hour), true, 2000)
+	a := made(t, dir, now.Add(-2*time.Hour), true, 0)
+	b := made(t, dir, now.Add(-1*time.Hour), true, 0)
+	fa, _ := os.Stat(a)
+	fb, _ := os.Stat(b)
+	fbig, _ := os.Stat(big)
+	limit := fa.Size() + fb.Size() + 100 // room for the two small ones
+	if fbig.Size() < limit {
+		t.Fatalf("the unreadable database (%d bytes) must be at least the limit (%d)", fbig.Size(), limit)
+	}
+	if err := os.Chmod(big, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(big, 0o600) })
+	res, err := Sweep(dir, Policy{MaxAge: 7 * 24 * time.Hour, MaxTotalBytes: limit, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Removed) != 0 || len(res.Kept) != 3 || !exists(a) || !exists(b) || !exists(big) {
+		t.Errorf("result = %+v; want nothing removed, three kept", res)
+	}
+}
+
+func TestCleanAllRemovesAnUnsureDatabaseWhoseLockCanBeTested(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes do not deny access on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can open a file whatever its mode")
+	}
+	dir := t.TempDir()
+	path := made(t, dir, now.Add(-time.Hour), true, 3)
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(path, 0o600) })
+	res, err := Sweep(dir, Policy{All: true, Now: now})
+	if err != nil || exists(path) || len(res.Removed) != 1 {
+		t.Errorf("exists %v, removed %d, err %v; want it removed by All", exists(path), len(res.Removed), err)
+	}
+}

@@ -12,10 +12,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -534,7 +536,7 @@ func TestTheSummaryNotesRecordsCutAtOneMiBAndOnlyThen(t *testing.T) {
 	if code != exitcode.OK || errOut != "" {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
-	note := fmt.Sprintf("  note: %d joined records were cut at 1 MiB of text; the lines after each cut start new records", want)
+	note := fmt.Sprintf("  note: joined text was cut at 1 MiB %d times; each cut started a new record", want)
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	at := -1
 	for i, l := range lines {
@@ -551,5 +553,72 @@ func TestTheSummaryNotesRecordsCutAtOneMiBAndOnlyThen(t *testing.T) {
 	_, out, _ = h.run("analyze", h.file("small.log", "2026-01-05 10:00:01 a\n  b\n"))
 	if strings.Contains(out, "note:") {
 		t.Errorf("a normal file has a note:\n%s", out)
+	}
+}
+
+func TestOnlyTheSignalsThatAreNotIgnoredAreCaught(t *testing.T) {
+	ignoring := func(ignored ...os.Signal) func(os.Signal) bool {
+		return func(s os.Signal) bool {
+			for _, i := range ignored {
+				if s == i {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	for _, tc := range []struct {
+		name    string
+		ignored func(os.Signal) bool
+		want    []os.Signal
+	}{
+		{"none ignored", ignoring(), []os.Signal{os.Interrupt, syscall.SIGTERM}},
+		{"interrupt ignored", ignoring(os.Interrupt), []os.Signal{syscall.SIGTERM}},
+		{"terminate ignored", ignoring(syscall.SIGTERM), []os.Signal{os.Interrupt}},
+		{"both ignored", ignoring(os.Interrupt, syscall.SIGTERM), nil},
+	} {
+		got := signalsToCatch(tc.ignored)
+		if len(got) != len(tc.want) {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+			}
+		}
+	}
+	// The real predicate must work too.
+	if got := signalsToCatch(signal.Ignored); len(got) == 0 {
+		t.Skip("the test process ignores both signals")
+	}
+}
+
+func TestAnalyzeWarnsOnceAboutKeptDatabasesItCannotRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes do not deny access on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can open a file whatever its mode")
+	}
+	h := newHarness(t)
+	h.config = h.file("config.json", `{"max_total_bytes": 20000}`)
+	p := h.file("a.log", "2026-01-05 10:00:01 a\n")
+	code, out, errOut := h.run("analyze", p)
+	if code != exitcode.OK || errOut != "" {
+		t.Fatalf("first run: code %d, stderr %q", code, errOut)
+	}
+	first := regexp.MustCompile(`(?m)^database: (.+\.db) \(`).FindStringSubmatch(out)[1]
+	if err := os.Chmod(first, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(first, 0o600) })
+	code, _, errOut = h.run("analyze", p)
+	const want = `aigolog: warning: 1 kept databases could not be read and were left alone; "aigolog list" shows them and "aigolog clean" removes them`
+	if code != exitcode.OK || strings.Count(errOut, want) != 1 {
+		t.Errorf("second run: code %d, stderr %q; want the warning once", code, errOut)
+	}
+	if _, err := os.Stat(first); err != nil {
+		t.Errorf("the unreadable database was removed: %v", err)
 	}
 }
