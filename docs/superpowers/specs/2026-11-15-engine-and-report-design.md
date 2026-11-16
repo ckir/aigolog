@@ -2,10 +2,12 @@
 
 Status: draft, not yet approved by the owner. After the first review the owner moved the Event
 Log reader into part 1, allowed C code, and chose how the Event Log is read. Those revisions went
-through a second review of three rounds. The reader's details (section 7.1) still wait for real
-events. The owner has since decided that they come from a Windows virtual machine on the
-development machine (section 8, A9), so the handoff files under `docs/handoff/` are on hold. The
-details will get a short review of their own when the events are in.
+through a second review of three rounds. On 2026-11-16 real events were captured on GitHub's
+hosted Windows machines, with the owner's go-ahead, while the Windows virtual machine the owner
+had chosen first was still starting; the owner then stopped that machine (section 8, A9). What
+was measured is in sections 7.1 and 9. The rules the measurements call for are listed in section
+7.1 as proposals and are not decided. Nothing added on 2026-11-16 has been through the second
+model's review. The handoff files under `docs/handoff/` stay on hold.
 Date: 2026-11-15.
 
 This document describes the first of two parts of aigolog. It is written so that a builder can
@@ -321,12 +323,96 @@ chose how it reads: "A Windows' own API" (section 6.6).
 - **Coverage.** The report states how many events were read and the time they span, because a log
   may no longer hold its older events.
 
-Nothing about this reader runs on Linux itself. These are settled only on a real Windows system
-(test A9 in section 8 says which): whether the values of service events are named; which
-events a failed logon and a failing service produce there; what a read of the Security log without
-elevation returns; whether an event's XML carries its record number; how a live read is bounded
-and where it stops; whether a database written from an elevated prompt can be opened from the same
-user's ordinary prompt; and how fast events arrive through the API.
+**Measured on Windows, 2026-11-16.** A throwaway script ran twice on three of GitHub's hosted
+Windows machines: Windows Server 2025 (x64, build 26100), Windows Server 2022 (x64, build 20348)
+and Windows 11 Enterprise (ARM64, build 26200). It made its own failed logons, failing services
+and test events there and read them back through the Event Log API and through `wevtutil`.
+Section 9 names the runs and the files. The results below were the same on all three machines
+unless one is named. Where a result describes how GitHub set a machine up, it says "on these
+machines"; that is not a statement about every Windows system.
+
+- **A failed logon** is event 4625 of the provider `Microsoft-Windows-Security-Auditing`, in the
+  Security log. It has 21 values and every one is named (`TargetUserName`, `LogonType`, `Status`,
+  `SubStatus`, `IpAddress` and others). An unknown user and a wrong password differ in
+  `SubStatus` (`0xc0000064` and `0xc000006a`). One value, `FailureReason`, holds `%%2313`: a
+  reference that Windows turns into words only in the readable message.
+- **A service that dies** is event 7031 (Windows will act, for example restart it) or 7034 (it
+  will not) of the provider `Service Control Manager`, in the System log. Its values are named
+  `param1`, `param2` and so on: the service's display name, how many times it has died, the
+  delay before the action in milliseconds, and the action in words. After them comes a `Binary`
+  element that holds the service's short name. A service that cannot start gives 7000 and 7009.
+  So the owner's second example, failing service restarts, is in the values: the count is one of
+  them.
+- **Values without names are common.** Leaving out the script's own test events, 123 of the
+  173 events in the Application log of the Server 2025 machine had only unnamed values (110 of
+  161 on Server 2022, 32 of 81 on Windows 11). None of the 500 newest Security events on any
+  machine had an unnamed value. The System log mixes named values, unnamed values and `Binary`.
+  Events with `UserData` in place of `EventData`, and with an empty `EventData`, both occur. The
+  rule fixed before looking was: if any value lacks a name, values are numbered by position. It
+  applies.
+- **The readable message is not in the event's XML.** The first line of the message appears
+  nowhere in it; the message comes only from the separate call. For an event from a source with
+  no publisher data on the machine, that call returns nothing. Three or four events of that kind,
+  not written by the script, were already in each machine's Application log.
+- **Every event's XML carried its record number**, in more than 1,000 events sampled per machine.
+- **Rights.** A standard user, and an administrator who is not elevated, were both refused the
+  Security log. The refusal comes when the query is opened, as Windows error 5, "Access is
+  denied", and never as an empty result. Both could read the Application and System logs. A
+  standard user placed in the group Event Log Readers read the Security log without elevation.
+  On these machines the Security log's access rule names only the system, Administrators and
+  Event Log Readers.
+- **Bounding a read.** A query bounded by record number, by age, or by a moment in time returned
+  what it should, newest first or oldest first. In one small case a query that was already open
+  returned nothing that was written after the reader had caught up with it (four events read,
+  one written afterwards, none returned). Events that arrive during a long read were not tested.
+- **Refusals from Windows.** A malformed query and a log that does not exist each get a clear
+  error. A file that is not an event log gets only "Insufficient information exists to identify
+  the cause of failure", so aigolog has to say what went wrong itself.
+- **Characters that XML forbids.** One test event carried an escape character and a bell
+  character in a value. On Windows Server 2022 the API returned them as they were, and a reader
+  that checks characters against the XML rules refused the whole event. On Windows Server 2025
+  and Windows 11 the API returned an underscore in place of each. Tab and line feed came back as
+  they were, `&`, `<` and `>` came back escaped, and Greek letters and a character outside the
+  basic plane came back intact. Measured for those two characters, from one source, through the
+  API; what `wevtutil` prints for such an event was not captured.
+- **The database.** A file written with an administrator's full rights in that account's own
+  local application data folder took the folder's rules (the system, Administrators and the
+  account, full control) and was owned by Administrators. The same account without elevation
+  could open it for reading and writing, create a file beside it, and delete it.
+- **An exported file.** Events saved to a `.evtx` file with `wevtutil` were read back through the
+  API on the same machine, with their messages.
+- **Two leads, not measurements.** Through .NET on a shared machine, 3,000 Security events were
+  read and turned into XML in about 0.1 s; asking for each one's readable message as well took
+  about 7 to 8 s. The script is not Go and the machine's load was not controlled.
+
+**Rules the measurements call for (proposals, not decided).** Each has alternatives. They go to
+the second model and then to the owner; none is settled by being written here.
+
+1. *When the readable message is fetched.* As written above, for every event. The lead above
+   suggests that may cost far more than reading the events. Alternatives: once per kind of
+   event, as an example; only for the events a finding cites; or a message pattern fetched once
+   per kind and filled in by the program, which is how winlogbeat does it (section 9).
+2. *How `Binary` and `UserData` become values.* Proposal: `Binary` is one more value, after the
+   others, named `Binary`, kept as the text Windows gave. The elements inside `UserData` are
+   values in document order, each named by its element.
+3. *Characters that XML forbids.* Proposal: before decoding, each is replaced by a visible mark;
+   the event is kept, the replacements are counted, and the report states the count. The raw
+   text is kept as received. Alternatives: refuse the event; decode with a reader that does not
+   check. An event that cannot be decoded is an event hidden from the analysis. winlogbeat
+   rewrites such characters as `\uNNNN` before it decodes (section 9).
+4. *References such as `%%2313`.* Proposal: the value is kept as written, and its meaning comes
+   from the readable message. Alternative: ask Windows to expand it when running on Windows,
+   which is what winlogbeat does (section 9); the record then differs from one decoded elsewhere.
+5. *What the refusal says.* Proposal: it names both remedies that were measured: an elevated
+   prompt, or membership of the group Event Log Readers.
+6. *Where a live read stops.* Proposal: the reader notes the newest record number before it
+   starts and asks for nothing beyond it, so the stop is its own rule and does not rest on how
+   Windows treats an open query.
+
+**Still not measured.** How fast events arrive through the API from Go. A desktop session where
+Windows asks for consent. Windows in a language other than English. Windows 10 and servers older
+than 2022. Reading a `.evtx` file on a machine other than the one that wrote it. None of the
+program's own behaviour: it does not exist yet.
 
 **Text lines.**
 
@@ -461,7 +547,10 @@ The database is a copy of the log, so it is handled as carefully as the log:
   live run holds. Two analyses at the same time must not disturb each other. How a run shows that
   it is alive is left to the builder; a lock held on the file is the expected way.
 - It is created readable and writable by its owner only, in the user's cache directory, and the
-  report prints its path and size.
+  report prints its path and size. On Windows a file takes the rules of its folder instead:
+  measured on 2026-11-16, in an account's local application data folder those name the system,
+  Administrators and the account. A database written from an elevated prompt could be opened,
+  written and deleted from the same account's ordinary prompt (section 7.1).
 - The copy belongs to whoever runs aigolog. A log that needs elevated rights to read, piped into
   aigolog run without them, leaves a copy that the ordinary user can read. The report says where
   the copy is, and `--no-keep` avoids it.
@@ -837,6 +926,14 @@ The tests:
     which are free for a public repository and exist for x64 and ARM64 (section 9).
   - **The owner's own Windows machine** is used only for a last check on real logs. The handoff
     files for it are on hold, and anything captured there is masked as they describe.
+  - **What has happened so far (2026-11-16).** While the virtual machine was still starting, the
+    owner agreed ("yes") to a capture workflow on a throwaway branch, and it ran on GitHub's
+    hosted machines the same night. It answered the questions the capture was for (section 7.1).
+    It also showed that the refusal case can be exercised there: a test account without rights,
+    and an administrator account that is not elevated, were both refused the Security log. The
+    virtual machine had reached Windows' first-boot screens and, after about 80 minutes, had no
+    command prompt yet. The owner then had it stopped ("stop the vm") and its files cleared, after
+    1 hour 53 minutes and one of the three attempts.
 - **A10. No kind-specific code.** A test searches the program's source, tests excluded, and the
   model's instruction for words that belong to one kind of log (ssh, sshd, systemd, password and
   the like, a list kept with the test) and fails when it finds one. This is a tripwire, not proof:
@@ -875,7 +972,19 @@ pinned tag, never built or run.
 | Wine has no Windows Event Log | Wine's source at `wine-11.22`, read not built: `dlls/wevtapi/main.c` is 165 lines of stubs (`EvtQuery` returns NULL; `EvtNext` and `EvtRender` set `ERROR_CALL_NOT_IMPLEMENTED`); `programs/wevtutil/main.c` logs "stub:"; `ReadEventLogW` in `dlls/advapi32/eventlog.c` is a stub |
 | The development machine cannot accelerate a guest | It is itself a KVM guest (`systemd-detect-virt` prints `kvm`); no `vmx` or `svm` processor flag; no `/dev/kvm`. QEMU 10.2.1 is installed; 8 processors, 23 GiB of memory, 197 GB of disk free |
 | How much slower an emulated guest is there | The same busybox SHA-256 over 300 MB, twice each on 2026-11-16: 1.06 to 1.32 s natively, 15.0 to 18.0 s inside a QEMU guest without acceleration (4 processors), so 11 to 17 times slower. A small Linux guest reached its first program about 6.7 s after QEMU started. One compute-bound workload; disk and Windows were not timed; background load was not controlled |
-| GitHub's hosted Windows runners | GitHub's documentation, read 2026-11-16: "Use of the standard GitHub-hosted runners is free and unlimited on public repositories"; Windows labels for x64 (`windows-latest`, `windows-2025`, `windows-2022`) and ARM64 (`windows-11-arm`); "Windows virtual machines are configured to run as administrators with User Account Control (UAC) disabled" |
+| GitHub's hosted Windows runners | GitHub's documentation, read 2026-11-16: "Use of the standard GitHub-hosted runners is free and unlimited on public repositories"; Windows labels for x64 (`windows-latest`, `windows-2025`, `windows-2022`) and ARM64 (`windows-11-arm`); "Windows virtual machines are configured to run as administrators with User Account Control (UAC) disabled". Measured there on 2026-11-16 (next rows): the registry value `EnableLUA` was 1, the account running the job had the built-in Administrator's identifier (ending -500) and ran at high integrity, and a second administrator account got a filtered token. So the account is unfiltered, but UAC is not switched off in the registry |
+| Where the Windows facts in section 7.1 were measured | The script `.github/probe/windows-events.ps1` on the branch `probe/windows-events` of this repository, run by the workflow beside it on the images `windows-2025`, `windows-2022` and `windows-11-arm`: run 43775716340 at commit `2b25519` and run 43776936291 at commit `5309a24`, both 2026-11-16. Each job uploaded `capture-<image>` holding `report.txt` (everything the script printed), the events as XML files, three `.evtx` files and the tallies. GitHub keeps those for five days; the branch is a throwaway. The script reads through .NET's `System.Diagnostics.Eventing.Reader`, which sits on the same API, and through `wevtutil`. A second model reviewed the script before the first run; its three claims of fact about Windows were each contradicted by the run |
+| A failed logon on Windows | `security-4625-01.xml` to `-14.xml` in each capture: event 4625, provider `Microsoft-Windows-Security-Auditing`, 21 `Data` elements, all with a `Name`. The script made 14 failed logons and read back 14. Unknown user: `SubStatus` `0xc0000064`; wrong password: `0xc000006a`; `Status` `0xc000006d` in both. `FailureReason` is `%%2313` in the XML and in `wevtutil`'s rendered form; the words appear only in the message. Auditing of logon failures was already on, on all three images |
+| A failing service on Windows | `system-scm-7031-*.xml` and `system-scm-7034-*.xml`: provider `Service Control Manager`; 7031 has `param1` to `param5` (display name, count, delay in milliseconds, a code, the action in words) and a `Binary` element; 7034 has `param1`, `param2` and `Binary`. On the Server 2025 image, a test service that exited by itself gave 7034 with count 1, then 7031 with counts 2 to 6 once a restart action was set, then 7034 with count 7 once it was cleared; killing the Print Spooler twice gave 7031 with counts 1 and 2 and the display name "Print Spooler". A service whose program is missing or is not a service gave 7000 and 7009 |
+| Shapes of events, and messages | `survey-Application.tsv`, `survey-System.tsv`, `survey-Security.tsv` in each capture of the first run: the newest events of each log (up to 500), by provider, number, shape of the payload and whether a message could be produced. The counts quoted in section 7.1 leave out the script's own events. `report.txt`, section 6: the first line of the message of a 4625 and of a 7031 "appears in the plain event XML: False". Events 4242 to 4244, written from a source nobody registered, came back with unnamed `Data` and no message |
+| Who may read which log | `report.txt`, sections 5 and 5b of the second run. A member of Users only: `wevtutil qe Security /c:1 /f:xml` exits with 5 and prints "Failed to open event query. Access is denied."; through the API, `UnauthorizedAccessException` with result `0x80070005`; Application and System are read. An account in Administrators logged on interactively (token elevation type 3, Administrators "used for deny only", medium integrity): the same refusal. The same account's unfiltered token, and the standard user once in Event Log Readers: Security is read. `machine-gl-Security.txt`: the access rule is `O:BAG:SYD:(A;;0xf0005;;;SY)(A;;0x5;;;BA)(A;;0x1;;;S-1-5-32-573)` |
+| Bounding a read, and refusals | `report.txt`, section 7: `*[System[EventRecordID > N]]` returned the three newest records; `TimeCreated[timediff(@SystemTime) <= 3600000]` and `TimeCreated[@SystemTime >= '<time>Z']` returned counts; a malformed query: "The specified query is invalid"; a missing log: "The specified channel could not be found"; a text file named `.evtx`: "Insufficient information exists to identify the cause of failure". Second run: four events read from an open query, a fifth written afterwards, "returned 0 event(s)" |
+| Characters XML forbids, in an event | `application-probe-4245-awkward.xml` in each capture of the second run. `windows-2022`: the value holds the characters U+001B and U+0007 themselves, and .NET's `XmlReader` with character checking refuses the event ("hexadecimal value 0x1B, is an invalid character"). `windows-2025` and `windows-11-arm`: an underscore stands in place of each, and the reader accepts the event. On all three: tab and line feed as they were, `&amp;`, `&lt;`, `&gt;`, Greek letters and U+1F600 intact, an empty value as `<Data></Data>` |
+| A file written elevated, opened without elevation, on Windows | `report.txt`, section 5c of the second run: a file created with the account's unfiltered token under `C:\Users\<account>\AppData\Local`; owner `BUILTIN\Administrators`; `icacls` lists the system, Administrators and the account with full control; with the same account's filtered token, open for reading, open for reading and writing, create a file beside it and delete it were all allowed |
+| How a shipping reader treats the same three problems | `elastic/beats` `v9.5.6`, read, not built. Characters XML forbids: `winlogbeat/sys/winevent/event.go:52` decodes event XML through `NewSafeReader`, and `libbeat/common/encoding/xml/safe_reader.go:28-31` and `:71-74` rewrite invalid bytes and control characters other than white space as `\uNNNN` before Go's XML parser sees them. The message: `winlogbeat/sys/wineventlog/renderer.go:342-360` takes it from a pattern kept per kind of event and falls back to `EvtFormatMessage` only when the publisher's data is missing. References: `renderer.go:243-253` replaces each `%%` followed by digits with the publisher's message of that number, applied to an event's values at `renderer.go:236` and `:475` |
+| The cost of asking for each event's message (a lead) | `report.txt`, section 7, two runs each: 3,000 Security events read and rendered to XML in 86 to 118 ms on the two x64 images (both runs); with the message as well, 7,162 to 7,917 ms (second run). Through .NET on a shared machine, load not controlled; not a measurement of Go |
+| What the hosted Windows images carry | `report.txt`, section 1: Go 1.24.13, git, MinGW gcc and clang on the path, `CGO_ENABLED=1`, no `cl`. On the ARM64 image the gcc on the path is an x86_64 build. The SQLite port in this design needs Go 1.26 (row above), so a workflow has to install its own Go |
+| Windows under emulation on the development machine | Microsoft's Windows Server 2025 evaluation disk, started under QEMU without acceleration on 2026-11-16 at 00:22: the firmware started the boot loader within a minute; at about 30 minutes the screen read "Getting devices ready", at about 80 minutes "Getting ready"; no command prompt when it was stopped at 02:15, after 1 hour 53 minutes |
 | Microsoft's evaluation copies of Windows | Microsoft's Evaluation Center, read 2026-11-16: Windows Server 2025 and 2022 as ISO and VHD, "expires in 180 days"; Windows 11 Enterprise as ISO, 90 days; "Register, then download and install". Windows Server 2025 needs no TPM or Secure Boot to install; it lists SSE4.2 and POPCNT among required processor features; "Beginning with Windows Server 2025, OpenSSH is now installed by default". What an evaluation copy may be used for was not stated on the pages read |
 | What the repository lacks as community documents | GitHub's community profile for the repository on 2026-11-15: 42 percent; code of conduct, contributing guide, issue template and pull-request template missing; licence, README and description present; no security policy |
 | Ollama serves an OpenAI-compatible chat endpoint that accepts tools, and can pass a request on to a cloud | `ollama/ollama` `v0.40.16`: `server/routes.go:2436` registers `/v1/chat/completions` wrapped in `cloudPassthroughMiddleware`; `openai/openai.go:111-124` has the `Tools` field |
@@ -1031,7 +1140,12 @@ reporting, so that no personal address has to be published.
 23. Settled by the owner, no longer my call: the Windows-bound work is done in a Windows virtual
     machine on the development machine, with GitHub's hosted runners as the fallback and the
     owner's own machine for a last check (section 8, A9). The second model recommended the hosted
-    runners as the first choice. Still open with the owner: which Windows image, and the time box.
+    runners as the first choice. The owner then chose Microsoft's Windows Server 2025 evaluation
+    image and agreed the time box, and on 2026-11-16 agreed ("yes") to a capture workflow on a
+    throwaway branch, which ran on the hosted runners while the virtual machine was still
+    starting. The owner then had the virtual machine stopped and its files cleared.
+24. The six proposals at the end of the Event Log part of section 7.1 are mine. They are not
+    decided: they go to the second model and then to the owner.
 
 **Part 1 grew during review.** It was described to the owner as "the engine and the one-shot
 report, on text logs", with one command. Review added the things below. Each can be left out of
@@ -1074,15 +1188,20 @@ part 1 without touching goals G1 to G7 or section 7.11; the owner may cut any of
 - Whether the evidence rule leaves too few findings standing with weaker models.
 - How well the instruction holds against hostile log text. A11 records it; it cannot be made
   certain.
-- Anything about behaviour on Windows, until a Windows system runs the tests.
-- Whether Windows is usable at all under emulation without acceleration on the development
-  machine. Only a compute probe has been timed; Windows itself has not been started there.
-- What the Event Log's events look like for the two examples, and the other points listed at the
-  end of the Event Log part of section 7.1, until real events have been captured on Windows.
-  The Windows cases of A2 and A4 are unfinished until then.
+- How the program itself behaves on Windows, until its tests run there. What Windows hands a
+  reader has been measured (section 7.1); the program does not exist yet.
+- Whether Windows is usable under emulation without acceleration on the development machine. A
+  Windows Server 2025 guest reached its first-boot screens and, after about 80 minutes, had not
+  reached a command prompt (section 9).
+- The Windows cases of A2 and A4. They can now be written from the captured events, and are
+  unfinished until the proposals at the end of the Event Log part of section 7.1 are decided.
 - Whether the facts in an event's own values are enough for a model to say what the event means
   when no readable message comes with it. The second model named moving this reader into part 1,
-  before any real event had been seen, as the revision most likely to be regretted.
+  before any real event had been seen, as the revision most likely to be regretted. Measured
+  since: the count of a service's failures and the reason code of a failed logon are values, but
+  a value can also be a bare reference such as `%%2313`, whose words are only in the message.
+- How fast events arrive through the API from Go, and what asking for every event's message
+  costs there. Only a lead through .NET exists (section 9).
 
 ## Stand-downs
 

@@ -2,6 +2,9 @@ ON HOLD since 2026-11-16. The owner decided that this work is done first in a Wi
 machine on the development machine. Do not follow this file unless the owner starts a session
 with it for a last check on a real machine.
 
+Update 2026-11-16: what items 1 to 5 ask was measured on GitHub's hosted Windows machines, with
+test events made there (design section 7.1). Nothing was captured on the owner's machine.
+
 # Handoff 2: real Windows events for the Event Log reader
 
 This file replaces `docs/handoff/windows-session.md`, which a review found unsafe in places: it did
