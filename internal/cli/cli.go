@@ -8,12 +8,14 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"runtime"
 
 	"github.com/ckir/aigolog/internal/buildinfo"
 	"github.com/ckir/aigolog/internal/exitcode"
+	"github.com/ckir/aigolog/internal/store"
 )
 
 const usage = `aigolog reads a log and says what it reveals.
@@ -39,6 +41,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "version":
 		fmt.Fprintf(stdout, "aigolog %s\n", buildinfo.Version)
 		fmt.Fprintf(stdout, "go %s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
+		engine, err := store.EngineVersion(context.Background())
+		if err != nil {
+			fmt.Fprintf(stderr, "aigolog: the store's engine does not work: %v\n", err)
+			return exitcode.Failure
+		}
+		fmt.Fprintf(stdout, "sqlite %s\n", engine)
 		return exitcode.OK
 	default:
 		fmt.Fprintf(stderr, "aigolog: unknown command %q\n", args[0])

@@ -8,6 +8,7 @@ package cli
 
 import (
 	"bytes"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -85,5 +86,19 @@ func TestRunVersionPrintsTheProgramAndGo(t *testing.T) {
 	}
 	if want := "go " + runtime.Version() + " " + runtime.GOOS + "/" + runtime.GOARCH; lines[1] != want {
 		t.Errorf("line 2 = %q, want %q", lines[1], want)
+	}
+}
+
+func TestRunVersionPrintsTheStoreEngine(t *testing.T) {
+	code, out, errOut := run("version")
+	if code != exitcode.OK {
+		t.Fatalf("code = %d, want %d; stderr: %s", code, exitcode.OK, errOut)
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) < 3 {
+		t.Fatalf("stdout has %d lines, want at least 3:\n%s", len(lines), out)
+	}
+	if !regexp.MustCompile(`^sqlite 3\.\d+\.\d+$`).MatchString(lines[2]) {
+		t.Errorf("line 3 = %q, want something like \"sqlite 3.54.1\"", lines[2])
 	}
 }
