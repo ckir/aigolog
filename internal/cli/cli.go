@@ -8,14 +8,9 @@
 package cli
 
 import (
-	"context"
-	"fmt"
 	"io"
-	"runtime"
-
-	"github.com/ckir/aigolog/internal/buildinfo"
-	"github.com/ckir/aigolog/internal/exitcode"
-	"github.com/ckir/aigolog/internal/store"
+	"os"
+	"time"
 )
 
 const usage = `aigolog reads a log and says what it reveals.
@@ -24,36 +19,23 @@ Usage:
   aigolog <command> [arguments]
 
 Commands:
+  analyze   read logs into a database and say what was read
+  list      show the kept databases
+  clean     remove the kept databases that no run is using
   version   print the version of the program and of its parts
   help      print this text
 `
 
-// Run runs the command named by args and returns the process exit code.
+// Run runs the command named by args and returns the process exit code. It
+// runs in the real environment: the standard input, the environment variables,
+// the clock and the local time zone.
 func Run(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 {
-		fmt.Fprint(stderr, usage)
-		return exitcode.Usage
-	}
-	switch args[0] {
-	case "help", "-h", "--help":
-		fmt.Fprint(stdout, usage)
-		return exitcode.OK
-	case "version":
-		fmt.Fprintf(stdout, "aigolog %s\n", buildinfo.Version)
-		fmt.Fprintf(stdout, "go %s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
-		engine, err := store.EngineVersion(context.Background())
-		if err != nil {
-			fmt.Fprintf(stderr, "aigolog: the store's engine does not work: %v\n", err)
-			return exitcode.Failure
-		}
-		fmt.Fprintf(stdout, "sqlite %s\n", engine)
-		for _, part := range platformParts() {
-			fmt.Fprintln(stdout, part)
-		}
-		return exitcode.OK
-	default:
-		fmt.Fprintf(stderr, "aigolog: unknown command %q\n", args[0])
-		fmt.Fprintln(stderr, `Run "aigolog help" for the commands.`)
-		return exitcode.Usage
-	}
+	return RunEnv(Env{
+		Stdin:     os.Stdin,
+		Stdout:    stdout,
+		Stderr:    stderr,
+		LookupEnv: os.LookupEnv,
+		Now:       time.Now,
+		Zone:      time.Local,
+	}, args)
 }
