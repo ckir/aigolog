@@ -285,25 +285,8 @@ func (d *DB) abort(err error) error {
 // when another version of aigolog wrote the database, and ErrIncomplete when
 // the run that made it did not finish.
 func Open(ctx context.Context, path string) (*DB, error) {
-	if err := checkDriverPath(path); err != nil {
-		return nil, fmt.Errorf("opening the database: %w", err)
-	}
-	if _, err := os.Stat(path); err != nil {
-		return nil, fmt.Errorf("opening the database: %w", err)
-	}
-	d := &DB{path: path, lockPath: strings.TrimSuffix(path, dbExt) + lockExt}
-	if err := d.connect(ctx); err != nil {
-		return nil, err
-	}
-	for _, pragma := range []string{`PRAGMA query_only=1`, `PRAGMA busy_timeout=2000`} {
-		if _, err := d.conn.ExecContext(ctx, pragma); err != nil {
-			d.closeConn()
-			return nil, fmt.Errorf("setting up the database (%s): %w", pragma, err)
-		}
-	}
-	meta, err := d.readMeta(ctx)
+	d, meta, err := openReadOnly(ctx, path)
 	if err != nil {
-		d.closeConn()
 		return nil, err
 	}
 	version, ok := meta["version"]
@@ -320,6 +303,35 @@ func Open(ctx context.Context, path string) (*DB, error) {
 		return nil, ErrIncomplete
 	}
 	return d, nil
+}
+
+// openReadOnly opens the file at path for reading and returns it with the rows
+// of its meta table. It makes the connection of Open, with its settings, but
+// makes none of its version or completeness checks. The caller closes the
+// database (closeConn) when the error is nil.
+func openReadOnly(ctx context.Context, path string) (*DB, map[string]string, error) {
+	if err := checkDriverPath(path); err != nil {
+		return nil, nil, fmt.Errorf("opening the database: %w", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		return nil, nil, fmt.Errorf("opening the database: %w", err)
+	}
+	d := &DB{path: path, lockPath: strings.TrimSuffix(path, dbExt) + lockExt}
+	if err := d.connect(ctx); err != nil {
+		return nil, nil, err
+	}
+	for _, pragma := range []string{`PRAGMA query_only=1`, `PRAGMA busy_timeout=2000`} {
+		if _, err := d.conn.ExecContext(ctx, pragma); err != nil {
+			d.closeConn()
+			return nil, nil, fmt.Errorf("setting up the database (%s): %w", pragma, err)
+		}
+	}
+	meta, err := d.readMeta(ctx)
+	if err != nil {
+		d.closeConn()
+		return nil, nil, err
+	}
+	return d, meta, nil
 }
 
 // readMeta returns the rows of meta.
