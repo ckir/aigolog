@@ -29,7 +29,7 @@ The files are kept byte for byte (see `.gitattributes`). Do not reformat them.
 | `application-probe-4243-03.xml` | One unnamed value, no readable message |
 | `application-probe-4244-02.xml` | No values at all, no readable message |
 | `application-probe-999-01.xml` | One unnamed value, written with `eventcreate`; it has a readable message |
-| `application-probe-4245-awkward.windows-2022.xml` | Values holding a tab, a line feed, `& < > " '`, an escape character and a bell, Greek letters, a character outside the basic plane, and an empty value. On this image the escape and bell characters are in the XML as they were, which XML forbids |
+| `application-probe-4245-awkward.windows-2022.xml` | Values holding a tab, a line feed, `& < > " '`, an escape character (twice) and a bell (once), Greek letters, a character outside the basic plane, and an empty value. On this image the escape and bell characters are in the XML as they were, which XML forbids |
 | `application-probe-4245-awkward.windows-2025.xml`, `.windows-11-arm.xml` | The same event on the newer images, where Windows put an underscore in place of each forbidden character |
 
 ## The same events as `wevtutil` prints them
