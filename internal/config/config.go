@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 const (
@@ -75,8 +76,8 @@ type fileConfig struct {
 // AIGOLOG_CONFIG (or the file at DefaultPath when it is not set), then
 // AIGOLOG_KEEP_DAYS, AIGOLOG_MAX_TOTAL_BYTES and AIGOLOG_CACHE_DIR, each of
 // which replaces the value before it when it is set and not empty. A missing
-// file is not an error. A file named by AIGOLOG_CONFIG that does not exist
-// gives the defaults, as the brief requires (the caller may want to tell the
+// file, or a path under something that is not a folder, is not an error. A
+// file named by AIGOLOG_CONFIG that does not exist gives the defaults, as the brief requires (the caller may want to tell the
 // user). lookupEnv reads the environment; Load never calls os.Getenv. A nil
 // lookupEnv means an empty environment (the file at DefaultPath is still
 // read).
@@ -125,10 +126,11 @@ func Load(lookupEnv func(string) (string, bool)) (Config, error) {
 	return cfg, nil
 }
 
-// readFile applies the file at path to cfg. A missing file changes nothing.
+// readFile applies the file at path to cfg. A missing file, or a path under
+// something that is not a folder, changes nothing.
 func readFile(path string, cfg *Config) error {
 	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		return nil
 	}
 	if err != nil {

@@ -38,6 +38,14 @@ func TestNoFileGivesTheDefaults(t *testing.T) {
 	}
 }
 
+func TestAConfigPathUnderARegularFileGivesTheDefaults(t *testing.T) {
+	file := writeConfig(t, "not a folder")
+	got, err := Load(env(map[string]string{"AIGOLOG_CONFIG": filepath.Join(file, "config.json")}))
+	if err != nil || got != Defaults() {
+		t.Errorf("got %+v, %v", got, err)
+	}
+}
+
 func TestTheFileOverridesTheDefaultsKeyByKey(t *testing.T) {
 	p := writeConfig(t, `{"keep_days": 3, "cache_dir": "/tmp/x"}`)
 	got, err := Load(env(map[string]string{"AIGOLOG_CONFIG": p}))
