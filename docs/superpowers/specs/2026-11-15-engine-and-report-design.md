@@ -303,15 +303,15 @@ chose how it reads: "A Windows' own API" (section 6.6).
   fallback if the direct calls prove hard to get right.
 - **Characters that XML forbids.** Before an event's XML is decoded, each character that XML does
   not allow (those below U+0020 other than tab, line feed and carriage return; U+FFFE; U+FFFF) is
-  rewritten, in the text handed to the decoder, as a backslash, the letter u and its four-digit
-  code. Half of a surrogate pair on its own, or bytes that are no character at all, are rewritten
-  the same way with the code FFFD. The event is kept. The run counts the
-  events and the characters rewritten, and the report states both. The raw text kept with the
-  record is what was received. Go's decoder refuses such an event otherwise, in both of its
-  modes (section 9), and an event that cannot be decoded would be hidden from the analysis. A
-  value that already held the six characters of such a mark cannot be told apart afterwards; that
-  is accepted. The owner ruled this on 2026-11-16; the form of the mark is my call, taken from
-  winlogbeat (section 9).
+  rewritten, in the text handed to the decoder, as a backslash, the letter u and its code in four
+  lowercase hexadecimal digits. Half of a surrogate pair on its own, or bytes that are no character
+  at all, are rewritten the same way with the code fffd. The event is kept. The run counts the
+  marks written and the events that got any, and the report states both. The raw text kept with the
+  record is what was received. Go's decoder refuses such an event otherwise, in both of its modes
+  (section 9), and an event that cannot be decoded would be hidden from the analysis. A value that
+  already held the six characters of such a mark cannot be told apart afterwards; that is accepted.
+  The owner ruled this on 2026-11-16; the form of the mark is my call, taken from winlogbeat
+  (section 9).
 - **What a record carries.** The time the event was created. Its record number, as its position.
   As its kind, the provider's name together with the event's number. Named fields in two separate
   groups, so that their names cannot collide: the event's system fields (its level, the computer,
@@ -319,26 +319,35 @@ chose how it reads: "A Windows' own API" (section 6.6).
   its position, counting from one, and a value that the event names is known by that name as
   well. The whole XML as its raw text.
 - **Which values an event has.** The children of `EventData`, in order. A `Binary` element is one
-  more value, in its place in that order, named `Binary` and kept as the text Windows gave. When
-  an event has `UserData` instead, its values are the innermost elements inside it, in document
-  order, each named by its element. An event with neither, or with an empty one, has no values. A
+  more value, in its place in that order, named `Binary` and kept as the text Windows gave. When an
+  event has `UserData` instead, its values are the innermost elements inside it, in document order,
+  each named by its element. An event with neither, or whose `EventData` has no children, has no
+  values and is still a record; an `EventData` whose only child is `Binary` has that one value. A
   reference such as `%%2313` is kept as written: its words are in Windows' message, and asking
   Windows to expand it would store a different record on Windows than anywhere else. When two
-  values of one event share a name, the name means the first of them **(my call)**; every value
-  still has its position. The rest is the owner's ruling of 2026-11-16.
+  values of one event share a name, the name means the first of them **(my call)**; the others are
+  reached by their positions. The rest is the owner's ruling of 2026-11-16.
 - **Windows' words.** Windows can say in words what an event means, and without them a value
   named `param2` means nothing to a reader. They are fetched in two places only, never for every
   event (the owner's ruling of 2026-11-16; section 9 has the cost that ruled out every event):
   - *For the model, once per kind of event:* the message pattern Windows holds for that kind,
     with a marker where each value goes and with no event's values in it. It is fetched for the
-    kinds the summary lists and goes into the summary beside each (section 7.5). Where Windows
-    holds no pattern for a kind, as it may not for older kinds of source, the message of one real
-    event of that kind stands in, labelled as an example and carrying that event's record number.
-    Where there is neither, the summary says that the kind has no words. The fallback to an
-    example is my addition; the owner accepted it with the rest.
+    kinds the summary lists, and for any other kind the first time a tool's answer describes it
+    (question 2 in section 7.6), and is shown beside the kind in both places. Where Windows holds
+    no pattern for a kind, as it may not for older kinds of source, the message of one real event
+    of that kind stands in. It is labelled as an example, carries that event's record number,
+    and is shown with that event's values beside it by position, so that the particulars of the
+    one event can be told from the wording of the kind. Where there is neither, the model is
+    told that the kind has no words. The fallback to an example is my addition; the owner
+    accepted it with the rest, and the second model warns that a model may still carry a name
+    from an example into a statement about other events (section 7.9 says what the evidence rule
+    does not catch).
   - *For a person, for each event a finding cites:* that event's own message, fetched when the
     report is made (section 7.10). If the event is gone from a live log by then, the report shows
     its values and says that its message could not be fetched.
+
+  Event XML read from a file or from standard input comes with no words at all: the summary says
+  so once, and a cited event is shown by its values.
 
   Windows' words are never mined for patterns or values, because the same event can have a
   different message, or none, on another machine or in another language. An event's kind and
@@ -616,7 +625,8 @@ successful login among 2,000 lines) is visible. When they do not fit, the most f
 the rest are counted, and the model finds others through the query tools.
 
 Each block of the summary is itself an answer with an identifier (section 7.6), so a finding can
-point at the summary directly.
+point at the summary directly. Windows' words are the exception: they are beside the answers, not
+among them.
 
 **The digest** is the head of the summary, formatted for a person: the largest groups and their
 counts. It is always in the report. With no model, or when the model fails, the digest and the
@@ -640,6 +650,9 @@ shapes. These questions must be answerable:
 7. Show the rows that match, in order, first or last, with their line numbers.
 8. Where else does this value occur, across all patterns? (This follows one address or one service
    name through the log.)
+
+For a kind of Windows event, the answer to question 2 comes with Windows' words for that kind
+(section 7.1). They are beside the answer, not part of it.
 
 One thing often sits in different slots of different patterns. In the sshd sample the user name
 is in one position in `Failed password for <name> from ...` and in another in
@@ -756,6 +769,8 @@ points at a cell of an answer and the program prints the cell's value. After the
 code checks each finding:
 
 1. It has at least one fact, and every cell a fact points at exists in an answer from this run.
+   Windows' words for a kind of event (section 7.1) are not an answer, so a fact that points at
+   them fails this check.
 2. Its title and statement contain no figure. A figure here is a number standing on its own: a
    count, an amount, a share, a port, a status code. A name that happens to contain a digit, such
    as the name of a protocol or a device, is not a figure. A figure in the model's words is a
@@ -779,9 +794,9 @@ was broken are what tell the reader not to rely on them.
 
 How pointers are written and how figures are detected in text are left to the builder. The tests
 fix the behaviour: a finding whose words contain a count is rejected; a finding whose words contain
-only a name with a digit in it passes; a finding pointing at a cell
-that does not exist is rejected; a finding citing a line from an answer it does not point at is
-rejected; a correct finding passes.
+only a name with a digit in it passes; a finding pointing at a cell that does not exist is
+rejected; a finding pointing at Windows' words is rejected; a finding citing a line from an answer
+it does not point at is rejected; a correct finding passes.
 
 ### 7.10 The report
 
@@ -867,7 +882,9 @@ Numbers come from section 9. What "done" means **(my call)**:
 - On Windows nothing that is required may be skipped: the Event Log reader's own
   tests run, the refusal case is exercised from a prompt without elevation, and the Windows part
   of A4 is run with a model.
-- windows/arm64 is built but not run, unless the owner has such a machine. The record of A9 says
+- windows/arm64 is built. A hosted ARM64 machine exists and ran the capture script (section 9),
+  so the suite can be run there as well; until the owner says that it must pass there, it is not
+  required to. The record of A9 says
   which targets were run.
 - In A4 at least one cloud model, named before the run starts, must pass the checklists. For the
   local model the run must complete, and every finding it shows must pass the evidence rule.
@@ -961,28 +978,27 @@ The tests:
   report. A live log larger than the bound is read up to the bound, and events written while a
   read is under way are not in it. A kind of event for which Windows holds a pattern is given it;
   a kind from a source with no publisher data is reported as having no words; a cited event is
-  shown with its own message. The Windows part of A4 is run there with a model.
+  shown with its own message. The Windows part of A4 is run there with a model. The test for
+  events written during a read writes them after the read has started, confirms that at least
+  one was written before the read ended, and finds none of them in the result.
 
-  Where this is done, as the owner decided ("I accept your recommendation", after first choosing
-  a handoff to their own machine):
-  - **A Windows virtual machine on the development machine.** It has a real Event Log, holds
-    nothing private, and can be changed freely, so failed logons, failing services and a user
-    without rights can all be produced on demand. The development machine is itself a virtual
-    machine with no acceleration for guests, and a compute probe ran 11 to 17 times slower inside
-    an emulated guest (section 9). It is x64 only.
-  - **A time box.** If a Windows guest cannot be brought to a command prompt that runs `wevtutil`
-    within the effort agreed with the owner, the capture moves to GitHub's hosted Windows runners,
-    which are free for a public repository and exist for x64 and ARM64 (section 9).
+  Where this is done:
+  - **GitHub's hosted Windows machines**, x64 and ARM64, free for a public repository (section
+    9). Each has a real Event Log, holds nothing private and is thrown away after its job, so
+    failed logons, failing services and accounts without rights can all be made on demand. The
+    capture of 2026-11-16 did that, and showed that the refusal case can be exercised there: a
+    test account without rights, and an administrator account that is not elevated, were both
+    refused the Security log (section 7.1). The owner had accepted these machines as the
+    fallback; they became the place when the owner stopped the virtual machine.
+  - **What was tried first.** The owner had chosen a Windows virtual machine on the development
+    machine, with a time box ("I accept your recommendation", after first choosing a handoff to
+    their own machine). That machine cannot accelerate a guest (section 9). A Windows Server
+    2025 guest reached its first-boot screens and, after 1 hour 53 minutes and one of three
+    attempts, had no command prompt. Meanwhile the owner agreed ("yes") to a capture workflow on
+    a throwaway branch, which ran on the hosted machines the same night; the owner then had the
+    virtual machine stopped ("stop the vm") and its files cleared.
   - **The owner's own Windows machine** is used only for a last check on real logs. The handoff
     files for it are on hold, and anything captured there is masked as they describe.
-  - **What has happened so far (2026-11-16).** While the virtual machine was still starting, the
-    owner agreed ("yes") to a capture workflow on a throwaway branch, and it ran on GitHub's
-    hosted machines the same night. It answered the questions the capture was for (section 7.1).
-    It also showed that the refusal case can be exercised there: a test account without rights,
-    and an administrator account that is not elevated, were both refused the Security log. The
-    virtual machine had reached Windows' first-boot screens and, after about 80 minutes, had no
-    command prompt yet. The owner then had it stopped ("stop the vm") and its files cleared, after
-    1 hour 53 minutes and one of the three attempts.
 - **A10. No kind-specific code.** A test searches the program's source, tests excluded, and the
   model's instruction for words that belong to one kind of log (ssh, sshd, systemd, password and
   the like, a list kept with the test) and fails when it finds one. This is a tripwire, not proof:
@@ -1193,7 +1209,8 @@ reporting, so that no personal address has to be published.
     runners as the first choice. The owner then chose Microsoft's Windows Server 2025 evaluation
     image and agreed the time box, and on 2026-11-16 agreed ("yes") to a capture workflow on a
     throwaway branch, which ran on the hosted runners while the virtual machine was still
-    starting. The owner then had the virtual machine stopped and its files cleared.
+    starting. The owner then had the virtual machine stopped and its files cleared, so the
+    hosted runners are where the Windows work is done (section 8, A9).
 24. Settled by the owner on 2026-11-16 ("yes" to all seven as recommended): the rules for the
     Event Log reader that the measurements called for (section 7.1), and keeping a set of the
     captured events as test data. Mine within them: the labelled example that stands in where
