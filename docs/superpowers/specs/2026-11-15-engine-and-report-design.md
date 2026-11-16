@@ -1,6 +1,7 @@
 # aigolog part 1: the engine and the one-shot report
 
-Status: draft, not yet approved by the owner. After the first review the owner moved the Event
+Status: approved by the owner on 2026-11-16 ("I approve"). How it is built is in
+`docs/superpowers/plans/`. History of the draft: after the first review the owner moved the Event
 Log reader into part 1, allowed C code, and chose how the Event Log is read. Those revisions went
 through a second review of three rounds. On 2026-11-16 real events were captured on GitHub's
 hosted Windows machines, with the owner's go-ahead, while the Windows virtual machine the owner
