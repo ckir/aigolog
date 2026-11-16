@@ -26,6 +26,26 @@ import (
 
 const analyzeUsage = "Usage: aigolog analyze [--format auto|text] [--as-of TIME] [--no-keep] <file>... | -"
 
+// givenString is a string flag that knows whether it was given, so that an
+// empty value (an unset shell variable in --as-of "$ASOF") is not taken for an
+// absent flag. When a flag is repeated the last value stays.
+type givenString struct {
+	value string
+	given bool
+}
+
+func (g *givenString) String() string {
+	if g == nil {
+		return ""
+	}
+	return g.value
+}
+
+func (g *givenString) Set(s string) error {
+	g.value, g.given = s, true
+	return nil
+}
+
 // analyzeArgs is what the command line of analyze says.
 type analyzeArgs struct {
 	files  []string // in the order given; - is standard input
@@ -46,7 +66,8 @@ func parseAnalyzeArgs(env Env, args []string) (a analyzeArgs, code int, ok bool)
 		fs.PrintDefaults()
 	}
 	format := fs.String("format", "auto", "the format of the input: auto or text")
-	asOf := fs.String("as-of", "", "the date that logs without a year are placed before: 2006-01-02, 2006-01-02 15:04 or 2006-01-02 15:04:05")
+	var asOf givenString
+	fs.Var(&asOf, "as-of", "the date that logs without a year are placed before: 2006-01-02, 2006-01-02 15:04 or 2006-01-02 15:04:05")
 	fs.BoolVar(&a.noKeep, "no-keep", false, "remove the database at the end of the run")
 
 	rest := args
@@ -89,8 +110,8 @@ func parseAnalyzeArgs(env Env, args []string) (a analyzeArgs, code int, ok bool)
 		report(env.Stderr, fmt.Sprintf("unknown format %q: want auto or text", *format))
 		return a, exitcode.Usage, false
 	}
-	if *asOf != "" {
-		n, err := timeparse.ParseAsOf(*asOf)
+	if asOf.given {
+		n, err := timeparse.ParseAsOf(asOf.value)
 		if err != nil {
 			report(env.Stderr, err.Error())
 			return a, exitcode.Usage, false

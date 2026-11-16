@@ -8,6 +8,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/ckir/aigolog/internal/buildinfo"
 	"github.com/ckir/aigolog/internal/exitcode"
+	"github.com/ckir/aigolog/internal/store"
 )
 
 // harness runs a command with a private cache folder and no configuration file.
@@ -26,6 +28,8 @@ type harness struct {
 	cache string
 	stdin string
 	now   time.Time
+	// config, when it is not empty, is the file that AIGOLOG_CONFIG names.
+	config string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -37,6 +41,9 @@ func (h *harness) run(args ...string) (code int, out, errOut string) {
 	h.t.Helper()
 	var o, e bytes.Buffer
 	vars := map[string]string{"AIGOLOG_CACHE_DIR": h.cache, "AIGOLOG_CONFIG": filepath.Join(h.cache, "no-config.json")}
+	if h.config != "" {
+		vars["AIGOLOG_CONFIG"] = h.config
+	}
 	code = RunEnv(Env{
 		Stdin:     strings.NewReader(h.stdin),
 		Stdout:    &o,
@@ -281,5 +288,77 @@ func TestStandardInputMayBeNamedOnlyOnce(t *testing.T) {
 	}
 	if _, err := os.Stat(h.cache); !os.IsNotExist(err) {
 		t.Errorf("the cache folder was made before the usage error: %v", err)
+	}
+}
+
+func TestAnEmptyAsOfIsRefused(t *testing.T) {
+	h := newHarness(t)
+	p := h.file("a.log", "Dec 31 23:00:00 h a\n")
+	for _, args := range [][]string{
+		{"analyze", "--as-of", "", p},
+		{"analyze", p, "--as-of="},
+		{"analyze", "--as-of", "2026-01-05", "--as-of", "", p},
+	} {
+		code, out, errOut := h.run(args...)
+		if code != exitcode.Usage || out != "" || !strings.Contains(errOut, "as-of") || dbCount(t, h.cache) != 0 {
+			t.Errorf("%q: code %d, stdout %q, stderr %q, databases %d", args, code, out, errOut, dbCount(t, h.cache))
+		}
+	}
+	if _, err := os.Stat(h.cache); !os.IsNotExist(err) {
+		t.Errorf("the cache folder was made: %v", err)
+	}
+	// the last occurrence is the one that counts
+	code, _, errOut := h.run("analyze", "--as-of", "", "--as-of", "2026-01-05", p)
+	if code != exitcode.OK {
+		t.Errorf("a later valid --as-of must win: code %d, stderr %q", code, errOut)
+	}
+}
+
+func TestHelpFlagOfAnalyzePrintsUsageAndSucceeds(t *testing.T) {
+	h := newHarness(t)
+	for _, flagName := range []string{"-h", "--help"} {
+		code, out, errOut := h.run("analyze", flagName)
+		if code != exitcode.OK || out != "" || !strings.Contains(errOut, "Usage: aigolog analyze") || !strings.Contains(errOut, "as-of") {
+			t.Errorf("%s: code %d, stdout %q, stderr %q", flagName, code, out, errOut)
+		}
+	}
+	if dbCount(t, h.cache) != 0 {
+		t.Error("a database was made")
+	}
+}
+
+func TestListAndCleanRefuseABadConfiguration(t *testing.T) {
+	h := newHarness(t)
+	h.config = h.file("config.json", `{"keep_dayz": 3}`)
+	for _, args := range [][]string{{"list"}, {"clean"}, {"analyze", "x"}} {
+		code, out, errOut := h.run(args...)
+		if code != exitcode.Usage || out != "" || !strings.Contains(errOut, "keep_dayz") {
+			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errOut)
+		}
+	}
+	if _, err := os.Stat(h.cache); !os.IsNotExist(err) {
+		t.Errorf("the cache folder was made: %v", err)
+	}
+}
+
+func TestListShowsALiveRunAsRunning(t *testing.T) {
+	h := newHarness(t)
+	db, err := store.Create(context.Background(), store.Options{Dir: h.cache, Now: func() time.Time { return h.now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	code, out, _ := h.run("list")
+	fields := strings.Split(strings.TrimRight(out, "\n"), "\t")
+	if code != exitcode.OK || strings.Count(out, "\n") != 1 || len(fields) != 6 ||
+		fields[0] != db.Path() || fields[3] != "running" || fields[4] != "-" || fields[5] != "-" {
+		t.Errorf("list: code %d, output %q (fields %q)", code, out, fields)
+	}
+	code, out, _ = h.run("clean")
+	if code != exitcode.OK || out != "removed 0 databases, 0 bytes; running 1\n" {
+		t.Errorf("clean: code %d, output %q", code, out)
+	}
+	if _, err := os.Stat(db.Path()); err != nil {
+		t.Errorf("the live database is gone: %v", err)
 	}
 }
