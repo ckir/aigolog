@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/ckir/aigolog/internal/buildinfo"
 	"github.com/ckir/aigolog/internal/exitcode"
@@ -69,6 +70,29 @@ func TestRunUnknownCommandNeverPrintsRawControlCharacters(t *testing.T) {
 	_, _, errOut := run("a\x1b[31mb\x07")
 	if strings.ContainsAny(errOut, "\x1b\x07") {
 		t.Errorf("stderr carries a raw control character: %q", errOut)
+	}
+}
+
+func TestRunUnknownCommandEscapesEveryControlCharacter(t *testing.T) {
+	var controls []rune
+	for r := rune(0x00); r <= 0x1f; r++ {
+		controls = append(controls, r)
+	}
+	controls = append(controls, 0x7f)
+	for r := rune(0x80); r <= 0x9f; r++ {
+		controls = append(controls, r)
+	}
+	for _, r := range controls {
+		code, _, errOut := run(string(r))
+		if code != exitcode.Usage {
+			t.Errorf("%U: code = %d, want %d", r, code, exitcode.Usage)
+		}
+		for _, c := range errOut {
+			if unicode.IsControl(c) && c != '\n' {
+				t.Errorf("%U: stderr carries raw control character %U: %q", r, c, errOut)
+				break
+			}
+		}
 	}
 }
 
