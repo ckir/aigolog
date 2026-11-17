@@ -22,6 +22,8 @@ Commands:
   analyze   read logs into a database, find the patterns in them and print what was found
   list      show the kept databases
   clean     remove the kept databases that no run is using
+  query     ask a question of a kept database and store the answer with the question
+  show      print a kept database: its run, its summary and the stored answers
   version   print the version of the program and of its parts
   help      print this text
 `
