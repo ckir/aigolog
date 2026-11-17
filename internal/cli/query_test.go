@@ -433,7 +433,22 @@ func TestQueryOnAnIncompleteDatabaseIsExitOne(t *testing.T) {
 	}
 }
 
+// The end-to-end test below needs a limit of 1ns to be over before the question
+// ends. That holds where the clock is fine, not on Windows, whose clock moves
+// on a system tick (about 15.6 ms); this test pins the message and the exit
+// code of the limit on every platform.
+func TestQuestionFailedReportsTheTimeLimitAndExitsWithOne(t *testing.T) {
+	var errOut bytes.Buffer
+	code := questionFailed(Env{Stderr: &errOut}, context.Background(), query.ErrTimeLimit, query.Limits{Time: 250 * time.Millisecond}, "")
+	if code != exitcode.Failure || errOut.String() != "aigolog: the question ran out of time (250ms)\n" {
+		t.Errorf("code %d, stderr %q", code, errOut.String())
+	}
+}
+
 func TestQueryTimeLimitIsExitOneAndStoresNothing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the clock of Windows is too coarse for a limit of 1ns; TestQuestionFailedReportsTheTimeLimitAndExitsWithOne covers the report")
+	}
 	h := newHarness(t)
 	path, _ := analysed(t, h, authLog)
 	word, number, pattern := slotsOf(t, h, path)

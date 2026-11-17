@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -551,6 +552,13 @@ func TestACancelledContextReturnsItsError(t *testing.T) {
 }
 
 func TestAQuestionWhoseOwnTimeIsOverGivesErrTimeLimitAndNoFigures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// A limit of 1ns is over only when the clock has moved on, and the clock
+		// of Windows moves on a system tick (about 15.6 ms), so a 2 ms question
+		// finishes first. TestAQuestionThatRunsOutOfTimeGivesNoFiguresAndErrTimeLimit
+		// covers the limit there with a question that takes longer.
+		t.Skip("the clock of Windows is too coarse for a limit of 1ns")
+	}
 	d := mined(t, authBody(authLogins))
 	// A nanosecond is over before the first statement is stepped.
 	a, err := d.Run(bg, ask(query.Question{Verb: query.Count}), query.Limits{Time: time.Nanosecond})
@@ -560,12 +568,20 @@ func TestAQuestionWhoseOwnTimeIsOverGivesErrTimeLimitAndNoFigures(t *testing.T) 
 	if !reflect.DeepEqual(a, query.Answer{}) {
 		t.Errorf("answer = %+v, want the zero value", a)
 	}
-	// The caller's own deadline is not the limit of the question: its error
-	// is returned as it is.
-	ctx, cancel := context.WithTimeout(bg, time.Nanosecond)
+}
+
+func TestACallersOwnDeadlineIsReturnedAsItIsAndIsNotTheLimitOfTheQuestion(t *testing.T) {
+	d := mined(t, authBody(authLogins))
+	// A deadline that is already in the past is over on every platform, with no
+	// help from the clock.
+	ctx, cancel := context.WithDeadline(bg, time.Now().Add(-time.Hour))
 	defer cancel()
-	if _, err := d.Run(ctx, ask(query.Question{Verb: query.Count}), query.Limits{Time: time.Minute}); !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, query.ErrTimeLimit) {
-		t.Errorf("Run past the deadline of the caller = %v, want context.DeadlineExceeded", err)
+	a, err := d.Run(ctx, ask(query.Question{Verb: query.Count}), query.Limits{Time: time.Minute})
+	if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, query.ErrTimeLimit) {
+		t.Errorf("Run past the deadline of the caller = %v, want context.DeadlineExceeded and not ErrTimeLimit", err)
+	}
+	if !reflect.DeepEqual(a, query.Answer{}) {
+		t.Errorf("answer = %+v, want the zero value", a)
 	}
 }
 
