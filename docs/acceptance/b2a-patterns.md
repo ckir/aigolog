@@ -1,6 +1,6 @@
 # B2a: patterns and the report with no model
 
-Date: 2026-11-17. Measured on commit `89e6554` (the last commit of the branch before this record). Workflow run: not yet; the branch is not pushed. The run id, the figures of the three hosted machines and of the arm64 Linux one are added after the owner pushes (Task 12b, step 3).
+Date: 2026-11-17. Measured on commit `89e6554` (the last commit of the branch before this record). Pushed the same day as draft pull request 6; the workflow runs are in the section "The first CI runs".
 
 What B2a built, in the order it was done: the open items of `TODO.md` (Task 1); the length of a record's time stamp (2); the typed scanner and the Drain-style clustering of the miner, with a cap (3, 4); layout 2 of the store with its header marks, read before the sweep decides (5); two passes inside `ingest.Run`, patterns and values on disk, indexes made after the load (6); the generators of the test logs with their truth (10); the queries (7), the summary and the digest (8), the report with `--summary` and `--json` (9); the fetch recipe of the sshd sample and its figures (11); and `cmd/measure`, a command that anyone can run to see the speed and memory of a run on their own machine (12a). With no model, `analyze` prints the source lines, the digest, the full summary and the database line (design 7.12, A7).
 
@@ -64,6 +64,25 @@ The bounds of the miner, measured by the final review and the controller after t
 - A database cut by less than one page reads as complete (SQLite reports no error); a cut of a page or more is kept as unreadable and is removed by `aigolog clean` only.
 - The JSON of format 1 repeats the sources in the summary block and in `sources`; it is a machine document and is not under the text budget.
 - The summary was built with a budget of 16,384 bytes; the figure is provisional (C measures it).
+
+## The first CI runs
+
+Workflow `check`, run `44086986806` (the first push, commit `4855f09`): `floor` (Go 1.26.0), `check (ubuntu-24.04)` and `check (ubuntu-24.04-arm)` green; `check (windows-2025)` and `check (windows-11-arm)` red on the same two tests of `internal/cli`, `TestNoKeepSaysKeptWhenTheDatabaseFileStays` and `TestAFailureToBuildTheSummaryReportsAFailureToRemoveTheDatabaseAsNoKeepDoes`: "TempDir RemoveAll cleanup ... The process cannot access the file because it is being used by another process". The cause was in the tests, not the program: both replace the removal seam with a stub that returns an error without closing the database, while the real `Remove` closes the connection and the lock first; Linux lets a test folder delete an open file, Windows does not. The stubs now close the database as the real function does.
+
+Workflow `check`, run `44087950060` (commit after that fix): all five jobs green: `floor (go 1.26.0)`, `check (ubuntu-24.04)`, `check (ubuntu-24.04-arm)`, `check (windows-2025)`, `check (windows-11-arm)`. CodeQL on both pushes (runs `44086955284`, `44087934036`): success, no open alert on the branch.
+
+What this proves: the read-only URI form of a Windows volume path is accepted (the `analyze` tests that build the summary and the smoke run passed on both Windows machines); `peak_windows.go` returned a figure on both; the fetch script ran under the `sh` of Git for Windows; the `ubuntu-24.04-arm` runner and its `just` download work; the `floor` job builds and tests with Go 1.26.0. It does not prove the UNC folder form, which no job uses.
+
+The smoke step (`just measure-smoke`: 20,000 lines, 1 run, so one sample on a shared hosted machine, not a range; the machines' load was not controlled), for the generated ssh log, 6 patterns, 1 record in a pattern seen once, 0 in the catch-all on every machine:
+
+| Machine | wall time | cpu time | peak memory | database size |
+|---|---|---|---|---|
+| linux/amd64 (`ubuntu-24.04`) | 0.53 s | 0.72 s | 22.3 MiB | 6.3 MiB |
+| linux/arm64 (`ubuntu-24.04-arm`) | 0.76 s | 0.95 s | 21.7 MiB | 6.3 MiB |
+| windows/amd64 (`windows-2025`) | 0.57 s | 0.86 s | 40.5 MiB | 6.3 MiB |
+| windows/arm64 (`windows-11-arm`) | 0.95 s | 1.44 s | 32.7 MiB | 6.3 MiB |
+
+The log is 2.0 MiB. The Windows peak is the peak working set, the Linux one the resident high-water mark; the two are read differently and the table does not compare them.
 
 ## How to repeat the measurement
 
