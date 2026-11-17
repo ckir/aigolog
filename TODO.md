@@ -19,9 +19,9 @@ Nothing here blocks a merged sub-project. Entries dated 2026-11-16.
 
 ## Defects and gaps in the gate
 
-- [ ] `just fmt-check` exits 0 for a Go file that does not parse (measured: `gofmt -l` prints the parse error to stderr and nothing to stdout, so `test -z` passes); only `go vet` later in `just check` catches it. `justfile`
+- [x] `just fmt-check` exits 0 for a Go file that does not parse (measured: `gofmt -l` prints the parse error to stderr and nothing to stdout, so `test -z` passes); only `go vet` later in `just check` catches it. `justfile` closed by part 1a
 - [ ] `cli.Run` ignores write errors from `Fprint*`, so help and version return OK when stdout is closed. `internal/cli/env.go`
-- [ ] The header test walks `internal/**/testdata` while `license_args` ignores only the top-level `testdata/**`; a future fixture `.go` file there fails the test but not `license-check`. `internal/repocheck/header_test.go`, `justfile`
+- [x] The header test walks `internal/**/testdata` while `license_args` ignores only the top-level `testdata/**`; a future fixture `.go` file there fails the test but not `license-check`. `internal/repocheck/header_test.go`, `justfile` closed by part 1a
 - [ ] `Open` never reads the `schema` row or validates the `meta` rows it created. B2 should read the version and schema before `Sweep` classifies a database (see the B2 inputs in the roadmap). `internal/store/db.go`, `internal/store/retention.go`
 
 ## Costs of B1 that had no home yet (found by its reviews; added 2026-11-17)

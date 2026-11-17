@@ -3,7 +3,7 @@
 
 version := "0.1.0-dev"
 ldflags := "-X github.com/ckir/aigolog/internal/buildinfo.Version=" + version
-license_args := "-f source-header.txt -ignore 'testdata/**' -ignore 'docs/**' -ignore 'ideas/**' -ignore 'marketing/**' -ignore 'dist/**'"
+license_args := "-f source-header.txt -ignore 'testdata/**' -ignore '**/testdata/**' -ignore 'docs/**' -ignore 'ideas/**' -ignore 'marketing/**' -ignore 'dist/**'"
 
 # List the recipes.
 default:
@@ -24,7 +24,7 @@ fmt:
 
 # Fail if a Go file is not in the standard format.
 fmt-check:
-    @test -z "$(gofmt -l cmd internal)" || { echo "not formatted (run: just fmt):"; gofmt -l cmd internal; exit 1; }
+    @out=$(gofmt -l cmd internal 2>&1) && test -z "$out" || { echo "not formatted (run: just fmt):"; echo "$out"; exit 1; }
 
 # Vet the code for this machine.
 vet:
