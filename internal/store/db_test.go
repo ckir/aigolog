@@ -8,6 +8,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -565,7 +566,7 @@ func TestCreateWritesTheMetaRows(t *testing.T) {
 	d := newDB(t) // the clock is 2026-01-16 10:15:00 UTC
 	want := map[string]string{
 		"version":  buildinfo.Version,
-		"schema":   "1",
+		"schema":   "2",
 		"created":  "2026-01-16T10:15:00Z",
 		"complete": "0",
 	}
@@ -755,5 +756,213 @@ func TestCreateRetriesWhenACleanerReplacesTheLockFileBeforeItIsChecked(t *testin
 	// The file in the place of ours is not ours to remove.
 	if got := readFile(t, lockOf(first)); got != "theirs" {
 		t.Errorf("the file that replaced the lock file holds %q, want it untouched", got)
+	}
+}
+
+func TestCreateMakesTheTablesOfLayoutTwo(t *testing.T) {
+	d := newDB(t)
+	rows, err := d.conn.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, name)
+	}
+	want := []string{"meta", "patterns", "records", "slot_values", "slots", "sources"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("tables = %v, want %v", got, want)
+	}
+	// The columns that Task 6 and the summary rely on, with their types.
+	for table, cols := range map[string][]string{
+		"patterns":    {"id INTEGER", "text TEXT", "slots TEXT", "catch_all INTEGER", "records INTEGER", "first_nanos INTEGER", "last_nanos INTEGER"},
+		"slots":       {"id INTEGER", "pattern INTEGER", "pos INTEGER", "type TEXT"},
+		"slot_values": {"record INTEGER", "slot INTEGER", "value TEXT"},
+		"records":     {"t_len INTEGER", "pattern INTEGER", "raw TEXT"},
+	} {
+		have := map[string]bool{}
+		info, err := d.conn.QueryContext(ctx, `SELECT name, type FROM pragma_table_info(?)`, table)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for info.Next() {
+			var name, typ string
+			if err := info.Scan(&name, &typ); err != nil {
+				t.Fatal(err)
+			}
+			have[name+" "+typ] = true
+		}
+		info.Close()
+		for _, c := range cols {
+			if !have[c] {
+				t.Errorf("table %s has no column %q (has %v)", table, c, have)
+			}
+		}
+	}
+	// slot_values has no index at creation: the indexes are made after the load.
+	var idx int
+	if err := d.conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND tbl_name = 'slot_values'`).Scan(&idx); err != nil || idx != 0 {
+		t.Errorf("slot_values has %d indexes, %v; want none", idx, err)
+	}
+}
+
+func TestAppendAndReadBackKeepsTheStampLength(t *testing.T) {
+	d := newDB(t)
+	src, err := d.AddSource(ctx, Source{Name: "a.log", Format: "text", Encoding: "utf-8", TimeKind: TimeWall})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := []record.Record{
+		{Source: src, Line: 1, Raw: "2026-01-16 10:15:00 up", Stamp: record.Stamp{State: record.Resolved, Nanos: 42, Len: 19}},
+		{Source: src, Line: 2, Raw: "no stamp here"},
+		{Source: src, Line: 3, Raw: "<34>Jan  5 10:15:00 x", Stamp: record.Stamp{State: record.YearPending, Month: 1, Day: 5, NanoOfDay: 7, Len: 19}},
+	}
+	if err := d.Append(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	var got []record.Record
+	err = d.Records(ctx, src, func(id int64, r record.Record) error { got = append(got, r); return nil })
+	if err != nil || len(got) != len(in) {
+		t.Fatalf("read back %d records, %v", len(got), err)
+	}
+	for i, wantLen := range []int{19, 0, 19} {
+		if got[i].Stamp.Len != wantLen {
+			t.Errorf("record %d: Stamp.Len = %d, want %d", i+1, got[i].Stamp.Len, wantLen)
+		}
+	}
+	// Every new record starts in the catch-all, pattern 0, until it is mined.
+	var nonzero int
+	if err := d.conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM records WHERE pattern <> 0`).Scan(&nonzero); err != nil || nonzero != 0 {
+		t.Errorf("%d records have a pattern, %v; want none", nonzero, err)
+	}
+}
+
+// bareExec runs statements with a bare connection on the database at path,
+// which no run holds.
+func bareExec(t *testing.T, path string, statements ...string) {
+	t.Helper()
+	db, err := sql.Open(DriverName, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, s := range statements {
+		if _, err := db.Exec(s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+}
+
+func TestOpenRefusesADatabaseOfLayoutOne(t *testing.T) {
+	dir := t.TempDir()
+	path := plainDatabase(t, dir, now.Add(-time.Hour),
+		`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID`,
+		`INSERT INTO meta VALUES ('version', '`+buildinfo.Version+`')`,
+		`INSERT INTO meta VALUES ('schema', '1')`,
+		`INSERT INTO meta VALUES ('created', '2026-01-20T11:00:00Z')`,
+		`INSERT INTO meta VALUES ('complete', '1')`)
+	_, err := Open(ctx, path)
+	var se *SchemaError
+	if !errors.As(err, &se) || se.Have != "1" || se.Want != "2" {
+		t.Fatalf("Open = %v, want a *SchemaError from 1 to 2", err)
+	}
+	if !strings.Contains(err.Error(), `"aigolog clean"`) || !strings.Contains(err.Error(), "layout 1") || !strings.Contains(err.Error(), "layout 2") {
+		t.Errorf("message = %q; want it to name both layouts and aigolog clean", err.Error())
+	}
+	const want = `the database has layout 1, and this aigolog reads layout 2; "aigolog clean" removes it`
+	if err.Error() != want {
+		t.Errorf("message = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestOpenChecksTheVersionThenTheLayoutThenTheCreatedRowThenTheCompleteMark(t *testing.T) {
+	// Each database is a finished one of this version, damaged in the ways
+	// named, by a bare connection.
+	build := func(t *testing.T, damage ...string) string {
+		t.Helper()
+		path := made(t, t.TempDir(), now.Add(-time.Hour), true, 1)
+		bareExec(t, path, damage...)
+		return path
+	}
+	const (
+		badVersion  = `UPDATE meta SET value = '0.0.0-other' WHERE key = 'version'`
+		badSchema   = `UPDATE meta SET value = '1' WHERE key = 'schema'`
+		badCreated  = `UPDATE meta SET value = 'last Tuesday' WHERE key = 'created'`
+		noCreated   = `DELETE FROM meta WHERE key = 'created'`
+		notComplete = `UPDATE meta SET value = '0' WHERE key = 'complete'`
+		noSchema    = `DELETE FROM meta WHERE key = 'schema'`
+	)
+	isVersion := func(err error) bool { var e *VersionError; return errors.As(err, &e) }
+	isSchema := func(err error) bool { var e *SchemaError; return errors.As(err, &e) }
+	isCreated := func(err error) bool {
+		return err != nil && strings.Contains(err.Error(), "not a database of aigolog") && strings.Contains(err.Error(), "created") &&
+			!isVersion(err) && !isSchema(err) && !errors.Is(err, ErrIncomplete)
+	}
+	isIncomplete := func(err error) bool { return errors.Is(err, ErrIncomplete) }
+	for _, c := range []struct {
+		name   string
+		damage []string
+		check  func(error) bool
+		what   string
+	}{
+		{"the version only", []string{badVersion}, isVersion, "a *VersionError"},
+		{"the layout only", []string{badSchema}, isSchema, "a *SchemaError"},
+		{"no layout row", []string{noSchema}, isSchema, "a *SchemaError"},
+		{"the created row only", []string{badCreated}, isCreated, "the error of the created row"},
+		{"no created row", []string{noCreated}, isCreated, "the error of the created row"},
+		{"the complete mark only", []string{notComplete}, isIncomplete, "ErrIncomplete"},
+		{"all four", []string{badVersion, badSchema, badCreated, notComplete}, isVersion, "a *VersionError"},
+		{"layout, created and complete", []string{badSchema, badCreated, notComplete}, isSchema, "a *SchemaError"},
+		{"created and complete", []string{badCreated, notComplete}, isCreated, "the error of the created row"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			path := build(t, c.damage...)
+			d, err := Open(ctx, path)
+			if err == nil {
+				d.Close()
+			}
+			if !c.check(err) {
+				t.Errorf("Open = %v, want %s", err, c.what)
+			}
+		})
+	}
+	// And the database that nothing is wrong with opens.
+	d, err := Open(ctx, build(t))
+	if err != nil {
+		t.Fatalf("Open of a good database: %v", err)
+	}
+	d.Close()
+}
+
+func TestOpenReadOnlyDoesNotRecreateADeletedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, DatabaseName(now, "0badf00d"))
+	for i := 0; i < 2; i++ {
+		d, meta, err := openReadOnly(ctx, path)
+		if err == nil {
+			d.closeConn()
+			t.Fatalf("call %d: openReadOnly of a path that does not exist returned no error (meta %v)", i+1, meta)
+		}
+		if _, serr := os.Stat(path); serr == nil {
+			t.Fatalf("call %d: the file exists after openReadOnly: it was made again", i+1)
+		}
+	}
+	if _, err := Open(ctx, path); err == nil {
+		t.Error("Open of a path that does not exist returned no error")
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Error("the file exists after Open: it was made again")
+	}
+	if ents, err := os.ReadDir(dir); err != nil || len(ents) != 0 {
+		t.Errorf("the folder holds %v, %v; want it empty", ents, err)
+	}
+	// A path given with a folder that is gone behaves the same.
+	if _, _, err := openReadOnly(ctx, filepath.Join(dir, "no-such-folder", "x.db")); err == nil {
+		t.Error("openReadOnly with no folder returned no error")
 	}
 }

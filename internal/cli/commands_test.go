@@ -9,6 +9,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -688,7 +689,9 @@ func TestAnalyzeWarnsOnceAboutKeptDatabasesItCannotRead(t *testing.T) {
 		t.Skip("root can open a file whatever its mode")
 	}
 	h := newHarness(t)
-	h.config = h.file("config.json", `{"max_total_bytes": 20000}`)
+	// One database of layout 2 is 28672 bytes (seven pages); the limit is room
+	// for one and not for two, as it was for layout 1 (20000 held one).
+	h.config = h.file("config.json", `{"max_total_bytes": 40000}`)
 	p := h.file("a.log", "2026-01-05 10:00:01 a\n")
 	code, out, errOut := h.run("analyze", p)
 	if code != exitcode.OK || errOut != "" {
@@ -781,5 +784,42 @@ func TestSweepErrorsDuringAnalyzeArePrintedAsWarnings(t *testing.T) {
 	}
 	if got := dbCount(t, h.cache); got != 1 {
 		t.Errorf("databases = %d, want only the old one that could not be removed", got)
+	}
+}
+
+func TestListShowsOtherForADatabaseOfAnotherLayout(t *testing.T) {
+	h := newHarness(t)
+	if err := os.MkdirAll(h.cache, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A database as B1 made it: a meta table with schema 1 and no header.
+	path := filepath.Join(h.cache, store.DatabaseName(h.now.Add(-time.Hour), "0badf00d"))
+	db, err := sql.Open(store.DriverName, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{
+		`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID`,
+		`INSERT INTO meta VALUES ('version', 'b1')`,
+		`INSERT INTO meta VALUES ('schema', '1')`,
+		`INSERT INTO meta VALUES ('complete', '1')`,
+	} {
+		if _, err := db.Exec(s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ := h.run("list")
+	fields := strings.Split(strings.TrimRight(out, "\n"), "\t")
+	if code != exitcode.OK || !strings.Contains(out, "\tother\t") || len(fields) != 6 || fields[3] != "other" || fields[5] != "b1" {
+		t.Errorf("list: code %d, output %q (fields %q)", code, out, fields)
+	}
+	if code, _, _ := h.run("clean"); code != exitcode.OK {
+		t.Fatalf("clean: code %d", code)
+	}
+	if dbCount(t, h.cache) != 0 {
+		t.Error("clean left the database of another layout")
 	}
 }

@@ -208,7 +208,7 @@ func tryCreate(ctx context.Context, dir string, created time.Time) (d *DB, retry
 		return nil, false, d.abort(fmt.Errorf("making the file of a database: %w", err))
 	}
 
-	if err := d.connect(ctx); err != nil {
+	if err := d.connect(ctx, d.path); err != nil {
 		return nil, false, d.abort(err)
 	}
 	for _, pragma := range []string{`PRAGMA journal_mode=MEMORY`, `PRAGMA synchronous=OFF`, `PRAGMA busy_timeout=2000`} {
@@ -253,9 +253,10 @@ func checkDriverDir(dir string) error {
 	return fmt.Errorf(`the folder of the databases %q starts with "file:", which the SQLite driver reads as a URI`, dir)
 }
 
-// connect opens the file at d.path and takes the one connection of d.
-func (d *DB) connect(ctx context.Context) error {
-	sqlDB, err := sql.Open(DriverName, d.path)
+// connect opens the database that dsn names and takes the one connection of d.
+// dsn is the path of the file, or a URI (readOnlyURI).
+func (d *DB) connect(ctx context.Context, dsn string) error {
+	sqlDB, err := sql.Open(DriverName, dsn)
 	if err != nil {
 		return fmt.Errorf("opening the database: %w", err)
 	}
@@ -268,7 +269,8 @@ func (d *DB) connect(ctx context.Context) error {
 	return nil
 }
 
-// makeSchema makes the tables and the rows of meta, in one transaction.
+// makeSchema makes the tables, the header and the rows of meta, in one
+// transaction.
 func (d *DB) makeSchema(ctx context.Context, created time.Time) error {
 	tx, err := d.conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -278,6 +280,16 @@ func (d *DB) makeSchema(ctx context.Context, created time.Time) error {
 	for _, stmt := range schema {
 		if _, err := tx.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("making the tables of the database: %w", err)
+		}
+	}
+	// The header says the file is ours, and which layout it has, whatever its
+	// tables are called later.
+	for _, pragma := range []string{
+		fmt.Sprintf(`PRAGMA application_id = %d`, applicationID),
+		fmt.Sprintf(`PRAGMA user_version = %d`, schemaNumber),
+	} {
+		if _, err := tx.ExecContext(ctx, pragma); err != nil {
+			return fmt.Errorf("writing the header of the database (%s): %w", pragma, err)
 		}
 	}
 	meta := [][2]string{
@@ -315,9 +327,11 @@ func (d *DB) abort(err error) error {
 }
 
 // Open opens the database of a finished run, for reading. It does not take
-// the lock of the run and it never makes a file. It returns a *VersionError
-// when another version of aigolog wrote the database, and ErrIncomplete when
-// the run that made it did not finish.
+// the lock of the run and it never makes a file. It checks, in this order, and
+// returns for the first that fails: the version of aigolog that wrote the
+// database (a *VersionError), its layout (a *SchemaError), the time of its
+// creation (an error that says it is not a database of aigolog), and that the
+// run that made it finished (ErrIncomplete).
 func Open(ctx context.Context, path string) (*DB, error) {
 	d, meta, err := openReadOnly(ctx, path)
 	if err != nil {
@@ -332,6 +346,14 @@ func Open(ctx context.Context, path string) (*DB, error) {
 		d.closeConn()
 		return nil, &VersionError{Have: version, Want: buildinfo.Version}
 	}
+	if meta["schema"] != schemaVersion {
+		d.closeConn()
+		return nil, &SchemaError{Have: meta["schema"], Want: schemaVersion}
+	}
+	if _, err := time.Parse(createdLayout, meta["created"]); err != nil {
+		d.closeConn()
+		return nil, fmt.Errorf(`%s is not a database of aigolog: its "created" row is missing or is not a time`, path)
+	}
 	if meta["complete"] != "1" {
 		d.closeConn()
 		return nil, ErrIncomplete
@@ -339,26 +361,46 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	return d, nil
 }
 
-// openReadOnly opens the file at path for reading and returns it with the rows
-// of its meta table. It makes the connection of Open, with its settings, but
-// makes none of its version or completeness checks. The caller closes the
-// database (closeConn) when the error is nil.
-func openReadOnly(ctx context.Context, path string) (*DB, map[string]string, error) {
+// openConnReadOnly opens the file at path for reading and returns the
+// database with its one connection and the settings of Open. It reads no
+// table. The file is opened through a read-only URI (readOnlyURI), so SQLite
+// never makes it: a path that a cleaner has just deleted fails to open, and
+// stays absent. The caller closes the database (closeConn) when the error is
+// nil.
+func openConnReadOnly(ctx context.Context, path string) (*DB, error) {
 	if err := checkDriverPath(path); err != nil {
-		return nil, nil, fmt.Errorf("opening the database: %w", err)
+		return nil, fmt.Errorf("opening the database: %w", err)
 	}
-	if _, err := os.Stat(path); err != nil {
-		return nil, nil, fmt.Errorf("opening the database: %w", err)
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening the database: %w", err)
 	}
 	d := &DB{path: path, lockPath: strings.TrimSuffix(path, dbExt) + lockExt}
-	if err := d.connect(ctx); err != nil {
-		return nil, nil, err
+	if err := d.connect(ctx, readOnlyURI(abs)); err != nil {
+		// The driver's error says the file could not be opened; if the file is
+		// not there, say so in a form that errors.Is(err, fs.ErrNotExist) finds.
+		if _, serr := os.Stat(path); errors.Is(serr, fs.ErrNotExist) {
+			err = fmt.Errorf("%w: %w", fs.ErrNotExist, err)
+		}
+		return nil, err
 	}
 	for _, pragma := range []string{`PRAGMA query_only=1`, `PRAGMA busy_timeout=2000`} {
 		if _, err := d.conn.ExecContext(ctx, pragma); err != nil {
 			d.closeConn()
-			return nil, nil, fmt.Errorf("setting up the database (%s): %w", pragma, err)
+			return nil, fmt.Errorf("setting up the database (%s): %w", pragma, err)
 		}
+	}
+	return d, nil
+}
+
+// openReadOnly opens the file at path for reading and returns it with the rows
+// of its meta table. It makes the connection of Open, with its settings, but
+// makes none of its version, layout or completeness checks. The caller closes
+// the database (closeConn) when the error is nil.
+func openReadOnly(ctx context.Context, path string) (*DB, map[string]string, error) {
+	d, err := openConnReadOnly(ctx, path)
+	if err != nil {
+		return nil, nil, err
 	}
 	meta, err := d.readMeta(ctx)
 	if err != nil {
@@ -435,8 +477,8 @@ func (d *DB) Append(ctx context.Context, recs []record.Record) error {
 	}
 	defer tx.Rollback()
 	stmt, err := tx.PrepareContext(ctx,
-		`INSERT INTO records (source, line, byte_offset, byte_length, t_state, t_nanos, t_exact, t_zone, t_month, t_day, t_tod, raw)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		`INSERT INTO records (source, line, byte_offset, byte_length, t_state, t_nanos, t_exact, t_zone, t_month, t_day, t_tod, raw, t_len)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("adding records: %w", err)
 	}
@@ -448,7 +490,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 		}
 		_, err := stmt.ExecContext(ctx, r.Source, r.Line, r.Offset, r.Length,
 			int(r.Stamp.State), r.Stamp.Nanos, exact, r.Stamp.Zone,
-			r.Stamp.Month, r.Stamp.Day, r.Stamp.NanoOfDay, r.Raw)
+			r.Stamp.Month, r.Stamp.Day, r.Stamp.NanoOfDay, r.Raw, r.Stamp.Len)
 		if err != nil {
 			stmt.Close()
 			return fmt.Errorf("adding records: %w", err)
@@ -611,7 +653,7 @@ func (d *DB) Records(ctx context.Context, source int, fn func(id int64, r record
 		return ErrClosed
 	}
 	rows, err := d.conn.QueryContext(ctx,
-		`SELECT id, source, line, byte_offset, byte_length, t_state, t_nanos, t_exact, t_zone, t_month, t_day, t_tod, raw
+		`SELECT id, source, line, byte_offset, byte_length, t_state, t_nanos, t_exact, t_zone, t_month, t_day, t_tod, raw, t_len
 FROM records WHERE source = ? ORDER BY id`, source)
 	if err != nil {
 		return fmt.Errorf("reading records: %w", err)
@@ -625,7 +667,7 @@ FROM records WHERE source = ? ORDER BY id`, source)
 			exact int
 		)
 		err := rows.Scan(&id, &r.Source, &r.Line, &r.Offset, &r.Length, &state, &r.Stamp.Nanos, &exact,
-			&r.Stamp.Zone, &r.Stamp.Month, &r.Stamp.Day, &r.Stamp.NanoOfDay, &r.Raw)
+			&r.Stamp.Zone, &r.Stamp.Month, &r.Stamp.Day, &r.Stamp.NanoOfDay, &r.Raw, &r.Stamp.Len)
 		if err != nil {
 			return fmt.Errorf("reading records: %w", err)
 		}

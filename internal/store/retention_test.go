@@ -9,6 +9,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -575,5 +576,174 @@ func TestRemoveOrphanLockLeavesAFileThatCannotBeDeletedAndReportsNothing(t *test
 	}
 	if *calls != 2 {
 		t.Errorf("removeFile was called %d times, want 2", *calls)
+	}
+}
+
+// layoutOne makes a complete database as version B1 of aigolog made it: a
+// meta table with schema 1, and no header.
+func layoutOne(t *testing.T, dir string, created time.Time) string {
+	t.Helper()
+	return plainDatabase(t, dir, created,
+		`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID`,
+		`INSERT INTO meta VALUES ('version', 'b1')`,
+		`INSERT INTO meta VALUES ('schema', '1')`,
+		`INSERT INTO meta VALUES ('created', '2026-01-20T11:00:00Z')`,
+		`INSERT INTO meta VALUES ('complete', '1')`)
+}
+
+// laterLayout makes a database whose header is ours and whose user_version is
+// the one given; its meta table is named metaName, with the rows of a finished
+// run.
+func laterLayout(t *testing.T, dir string, created time.Time, userVersion int, metaName string) string {
+	t.Helper()
+	return plainDatabase(t, dir, created,
+		fmt.Sprintf(`PRAGMA application_id = %d`, applicationID),
+		fmt.Sprintf(`PRAGMA user_version = %d`, userVersion),
+		`CREATE TABLE `+metaName+` (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID`,
+		`INSERT INTO `+metaName+` VALUES ('version', 'later')`,
+		`INSERT INTO `+metaName+` VALUES ('schema', '3')`,
+		`INSERT INTO `+metaName+` VALUES ('complete', '1')`)
+}
+
+func TestAListedDatabaseOfLayoutOneIsShownAsOtherAndAgedOut(t *testing.T) {
+	dir := t.TempDir()
+	path := layoutOne(t, dir, now.Add(-48*time.Hour))
+	infos, err := List(dir)
+	if err != nil || len(infos) != 1 {
+		t.Fatalf("List = %+v, %v", infos, err)
+	}
+	if infos[0].State != "other" || infos[0].unsure || infos[0].Version != "b1" {
+		t.Errorf("info = %+v; want state other, not unsure, version b1", infos[0])
+	}
+
+	// A larger age limit keeps it (the edit of Sweep: other is treated like
+	// complete, not like an interrupted run that goes at once).
+	if _, err := Sweep(dir, Policy{MaxAge: 7 * 24 * time.Hour, Now: now}); err != nil || !exists(path) || !exists(lockOf(path)) {
+		t.Fatalf("a database of another layout was removed by an age limit it is younger than: %v, exists %v", err, exists(path))
+	}
+	// A smaller one removes it, with its lock file.
+	res, err := Sweep(dir, Policy{MaxAge: 24 * time.Hour, Now: now})
+	if err != nil || exists(path) || exists(lockOf(path)) || len(res.Removed) != 1 {
+		t.Errorf("Sweep with a smaller limit: %+v, %v; want it removed", res, err)
+	}
+
+	// All removes it, whatever its age.
+	path = layoutOne(t, dir, now.Add(-time.Hour))
+	if _, err := Sweep(dir, Policy{Now: now}); err != nil || !exists(path) {
+		t.Fatalf("a young database of another layout was removed with no limit: %v", err)
+	}
+	if _, err := Sweep(dir, Policy{All: true, Now: now}); err != nil || exists(path) {
+		t.Errorf("Sweep All left it: %v, exists %v", err, exists(path))
+	}
+}
+
+func TestADatabaseWhoseMetaTableWasRenamedIsOtherNotRemoved(t *testing.T) {
+	dir := t.TempDir()
+	recent := laterLayout(t, dir, now.Add(-time.Hour), 3, "meta2")
+	old := laterLayout(t, dir, now.Add(-10*24*time.Hour), 3, "meta2")
+	infos, err := List(dir)
+	if err != nil || len(infos) != 2 {
+		t.Fatalf("List = %+v, %v", infos, err)
+	}
+	for _, in := range infos {
+		if in.State != "other" || in.unsure {
+			t.Errorf("%s: %+v; want state other, not unsure", in.Path, in)
+		}
+		// The meta table is not there to read, so the version is unknown.
+		if in.Version != "" {
+			t.Errorf("%s: version %q; want it empty (the meta table has another name)", in.Path, in.Version)
+		}
+	}
+	res, err := Sweep(dir, Policy{MaxAge: 7 * 24 * time.Hour, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists(recent) || exists(old) || len(res.Removed) != 1 || res.Removed[0].Path != old {
+		t.Errorf("recent exists %v, old exists %v, result %+v; want only the old one removed by age", exists(recent), exists(old), res)
+	}
+	old = laterLayout(t, dir, now.Add(-10*24*time.Hour), 3, "meta2")
+	if _, err := Sweep(dir, Policy{All: true, Now: now}); err != nil || exists(recent) || exists(old) {
+		t.Errorf("All: %v, recent exists %v, old exists %v; want both gone", err, exists(recent), exists(old))
+	}
+}
+
+func TestADatabaseOfALaterLayoutShowsItsVersionWhenMetaIsStillThere(t *testing.T) {
+	dir := t.TempDir()
+	laterLayout(t, dir, now.Add(-time.Hour), 3, "meta")
+	infos, err := List(dir)
+	if err != nil || len(infos) != 1 || infos[0].State != "other" || infos[0].Version != "later" {
+		t.Errorf("List = %+v, %v; want state other and version later", infos, err)
+	}
+}
+
+func TestADatabaseWithOurHeaderAndNoMetaTableIsKeptAsUnreadable(t *testing.T) {
+	dir := t.TempDir()
+	old := plainDatabase(t, dir, now.Add(-30*24*time.Hour),
+		fmt.Sprintf(`PRAGMA application_id = %d`, applicationID),
+		fmt.Sprintf(`PRAGMA user_version = %d`, schemaNumber),
+		`CREATE TABLE records (id INTEGER PRIMARY KEY)`)
+	infos, err := List(dir)
+	if err != nil || len(infos) != 1 || infos[0].State != "unreadable" || !infos[0].unsure {
+		t.Fatalf("List = %+v, %v; want unreadable and unsure", infos, err)
+	}
+	res, err := Sweep(dir, Policy{MaxAge: time.Hour, MaxTotalBytes: 1, Now: now})
+	if err != nil || !exists(old) || !exists(lockOf(old)) || len(res.Removed) != 0 || len(res.Kept) != 1 {
+		t.Errorf("Sweep: %+v, %v; want it kept even when old and over the size limit", res, err)
+	}
+	// A database with no header and no meta table is still not ours.
+	other := plainDatabase(t, dir, now.Add(-31*24*time.Hour), `CREATE TABLE records (id INTEGER PRIMARY KEY)`)
+	if _, err := Sweep(dir, Policy{MaxAge: time.Hour, Now: now}); err != nil || exists(other) || !exists(old) {
+		t.Errorf("Sweep: %v, other exists %v, old exists %v; want only the one with no header removed", err, exists(other), exists(old))
+	}
+	if _, err := Sweep(dir, Policy{All: true, Now: now}); err != nil || exists(old) {
+		t.Errorf("Sweep All: %v, exists %v; want it removed (its lock could be tested)", err, exists(old))
+	}
+}
+
+func TestADamagedHeaderIsStillRemovedAsNotADatabase(t *testing.T) {
+	dir := t.TempDir()
+	path := made(t, dir, now.Add(-time.Hour), true, 3)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copy(data, "not a sqlite header ")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	infos, err := List(filepath.Dir(path))
+	if err != nil || len(infos) != 1 || infos[0].State != "unreadable" || infos[0].unsure {
+		t.Fatalf("List = %+v, %v; want unreadable and not unsure", infos, err)
+	}
+	if _, err := Sweep(dir, Policy{MaxAge: 7 * 24 * time.Hour, Now: now}); err != nil || exists(path) {
+		t.Errorf("Sweep: %v, exists %v; want it removed", err, exists(path))
+	}
+}
+
+func TestOtherDatabasesCountTowardTheSizeLimit(t *testing.T) {
+	dir := t.TempDir()
+	pad := func(created time.Time) string {
+		return plainDatabase(t, dir, created,
+			fmt.Sprintf(`PRAGMA application_id = %d`, applicationID),
+			`PRAGMA user_version = 3`,
+			`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID`,
+			`INSERT INTO meta VALUES ('complete', '1')`,
+			`CREATE TABLE pad (x BLOB)`,
+			`WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM c WHERE n < 200) INSERT INTO pad SELECT zeroblob(1000) FROM c`)
+	}
+	older := pad(now.Add(-2 * time.Hour))
+	newer := pad(now.Add(-1 * time.Hour))
+	fo, _ := os.Stat(older)
+	fn, _ := os.Stat(newer)
+	limit := fn.Size() + 100 // room for the newer one only
+	if fo.Size() > limit {
+		t.Fatalf("the older (%d bytes) must not be over the limit (%d) alone", fo.Size(), limit)
+	}
+	res, err := Sweep(dir, Policy{MaxAge: 7 * 24 * time.Hour, MaxTotalBytes: limit, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists(older) || !exists(newer) || len(res.Removed) != 1 || res.Removed[0].Path != older {
+		t.Errorf("older exists %v, newer exists %v, result %+v; want only the older removed", exists(older), exists(newer), res)
 	}
 }

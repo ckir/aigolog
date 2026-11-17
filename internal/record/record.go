@@ -42,7 +42,9 @@ type Stamp struct {
 	NanoOfDay  int64
 	// Len is the number of bytes at the start of the record's first line that
 	// the stamp covers, a priority tag (<34>) and a bracket before it
-	// included. Raw[Len:] is the message. It is 0 when State is NoStamp.
+	// included. Raw[Len:] is the message. It is 0 when the reader found no
+	// stamp; the store setting State to NoStamp later (a year that cannot be
+	// resolved) does not change it.
 	Len int
 }
 
