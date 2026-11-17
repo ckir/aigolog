@@ -8,7 +8,8 @@ Nothing here blocks a merged sub-project. Entries dated 2026-11-16.
 - [x] The `version` command's engine-failure branch (error from `store.EngineVersion`, message on stderr, exit 1) has no test. `internal/cli/env.go` closed by part 1b
 - [x] `store.EngineVersion` has no cancelled-context test and returns driver errors unwrapped. `internal/store/engine.go` closed by part 1b
 - [x] The full usage text is not pinned; `cli_test.go` checks only the fragments `Usage:` and `Commands:`. `internal/cli/cli_test.go` closed by part 1b
-- [ ] `winlog.Available`'s first-missing-procedure error path and the `eventlog api missing` branch of `platformParts` have no test (the package variables `procedures` and `wevtapi` cannot be swapped). `internal/winlog/api_windows.go`
+- [x] `winlog.Available`'s first-missing-procedure error path has no test (the package variables `procedures` and `wevtapi` cannot be swapped). `internal/winlog/api_windows.go` closed by part 1f (the loop is `available`, with the finder passed in; its tests run on the Windows machines of CI)
+- [ ] The `eventlog api missing` branch of `platformParts` has no test (it calls `winlog.Available`, which cannot be made to fail). `internal/cli/parts_windows.go`
 - [x] No test sends a real SIGINT or SIGTERM to a running `aigolog`; the cli tests only cancel a context. The second-signal kill and `signal.Ignored` were checked by hand on Linux only. `internal/cli/analyze.go` closed by part 1e
 - [x] `Create`'s `O_EXCL`-collision and `os.SameFile` retry branches, the re-take path in the size phase (an entry that became running) and `Info.Size` staleness have no test (they need a seam). `internal/store/db.go`, `internal/store/retention.go` closed by part 1d
 - [x] The Windows fallback of `removeOrphanLock` (delete fails while the process holds the handle, close, retry once) is tested nowhere; the only test skips on Windows. `internal/store/retention.go` closed by part 1d
@@ -36,4 +37,4 @@ Nothing here blocks a merged sub-project. Entries dated 2026-11-16.
 
 ## CI
 
-- [ ] CI never runs the cross-built `dist/` Windows binaries (`just build` runs on ubuntu only; the Windows runners use `go run`), never runs linux/arm64 natively, and never builds Go 1.26.0 (the `go.mod` floor; the workflow pins 1.27.4). The "Run the program" step asserts the exit status only. `.github/workflows/check.yml`
+- [ ] CI never runs the cross-built `dist/` Windows binaries (`just build` runs on ubuntu only; the Windows runners use `go run`), never runs linux/arm64 natively, and never builds Go 1.26.0 (the `go.mod` floor; the workflow pins 1.27.4). The "Run the program" step asserts the exit status only. `.github/workflows/check.yml` (run on the first push; tick when the jobs are green: run id ...)

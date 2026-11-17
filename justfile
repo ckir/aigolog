@@ -24,7 +24,7 @@ fmt:
 
 # Fail if a Go file is not in the standard format.
 fmt-check:
-    @out=$(gofmt -l cmd internal 2>&1) && test -z "$out" || { echo "not formatted (run: just fmt):"; echo "$out"; exit 1; }
+    @out=$(gofmt -l cmd internal 2>&1) || { echo "gofmt failed (a file may not parse):"; echo "$out"; exit 1; }; test -z "$out" || { echo "not formatted (run: just fmt):"; echo "$out"; exit 1; }
 
 # Vet the code for this machine.
 vet:

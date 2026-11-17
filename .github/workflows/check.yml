@@ -32,6 +32,7 @@ jobs:
           - ubuntu-24.04
           - windows-2025
           - windows-11-arm
+          - ubuntu-24.04-arm
     defaults:
       run:
         shell: bash
@@ -56,8 +57,57 @@ jobs:
         run: just check
 
       - name: Build the four targets
-        if: matrix.os == 'ubuntu-24.04'
         run: just build
 
       - name: Run the program
-        run: go run ./cmd/aigolog version
+        env:
+          MACHINE_OS: ${{ runner.os }}
+          MACHINE_ARCH: ${{ runner.arch }}
+        run: |
+          case "$MACHINE_OS-$MACHINE_ARCH" in
+          Linux-X64) bin=dist/aigolog-linux-amd64 ;;
+          Linux-ARM64) bin=dist/aigolog-linux-arm64 ;;
+          Windows-X64) bin=dist/aigolog-windows-amd64.exe ;;
+          Windows-ARM64) bin=dist/aigolog-windows-arm64.exe ;;
+          *)
+            echo "no built binary for $MACHINE_OS-$MACHINE_ARCH" >&2
+            exit 1
+            ;;
+          esac
+          out=$("./$bin" version) || { echo "$bin version failed" >&2; exit 1; }
+          printf '%s\n' "$out"
+          first=$(printf '%s\n' "$out" | sed -n 1p)
+          case "$first" in
+          "aigolog "*) ;;
+          *) echo "first line of the output does not begin 'aigolog '" >&2; exit 1 ;;
+          esac
+          printf '%s\n' "$out" | grep -q '^sqlite ' || { echo "no line begins 'sqlite '" >&2; exit 1; }
+
+  # The floor: the oldest Go that go.mod allows, with no toolchain download.
+  floor:
+    name: floor (go 1.26.0)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      GOTOOLCHAIN: local
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.0"
+
+      - name: Build and test with the floor
+        run: |
+          go version
+          go build ./...
+          go test ./internal/...

@@ -15,6 +15,10 @@ Linux-X64)
 	asset="just-$version-x86_64-unknown-linux-musl.tar.gz"
 	sum=4a5cc2f53e6f0f8c59092a6cc38291eb729d46a7dd95d3ae582008881b84931d
 	;;
+Linux-ARM64)
+	asset="just-$version-aarch64-unknown-linux-musl.tar.gz"
+	sum=748237128c4c40cbdabc65e841d05ceba13cc23a91eaba395495894c1d9764df
+	;;
 Windows-X64)
 	asset="just-$version-x86_64-pc-windows-msvc.zip"
 	sum=759f16fb7aa17c5c8b9594b6d4a8c1a6630dfd042cf2b3ff84841454d3d188dc
