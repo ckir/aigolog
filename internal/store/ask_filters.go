@@ -16,8 +16,8 @@ import (
 	"github.com/ckir/aigolog/internal/record"
 )
 
-// placeholders returns n question marks joined by commas: "?,?,?". n is at
-// least 1 wherever it is used.
+// placeholders returns n question marks joined by commas: "?,?,?". n is always
+// at least 1, because Question.Validate bounds every list from below.
 func placeholders(n int) string {
 	if n <= 1 {
 		return "?"
@@ -77,20 +77,22 @@ func setOf(q query.Question) recordSet {
 func (s recordSet) ids() string { return "SELECT r.id FROM records r" + s.where }
 
 // facts states what the records of the set are: how many, the least and the
-// greatest resolved time, and the first and the last by id. The set is empty
+// greatest resolved time, how many have no resolved time, and the first and the
+// last by id. The set is empty
 // when no pattern or filter names any; then it is every record.
 func (d *DB) facts(ctx context.Context, s recordSet) (query.Facts, error) {
 	resolved := int(record.Resolved)
-	var n int64
+	var n, noTime int64
 	var lo, hi, first, last sql.NullInt64
 	err := d.conn.QueryRowContext(ctx, `SELECT COUNT(*),
   MIN(CASE WHEN r.t_state = ? THEN r.t_nanos END), MAX(CASE WHEN r.t_state = ? THEN r.t_nanos END),
-  MIN(r.id), MAX(r.id) FROM records r`+s.where, append([]any{resolved, resolved}, s.args...)...).
-		Scan(&n, &lo, &hi, &first, &last)
+  COUNT(CASE WHEN r.t_state <> ? THEN 1 END),
+  MIN(r.id), MAX(r.id) FROM records r`+s.where, append([]any{resolved, resolved, resolved}, s.args...)...).
+		Scan(&n, &lo, &hi, &noTime, &first, &last)
 	if err != nil {
 		return query.Facts{}, fmt.Errorf("counting the records of the question: %w", err)
 	}
-	f := query.Facts{Rows: n}
+	f := query.Facts{Rows: n, NoTime: noTime}
 	if n == 0 {
 		return f, nil
 	}

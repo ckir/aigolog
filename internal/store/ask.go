@@ -103,8 +103,14 @@ func (d *DB) answer(ctx context.Context, q query.Question, rowCap int) (result, 
 		return d.runCount(ctx, q)
 	case query.Top:
 		return d.runTop(ctx, q, rowCap)
-	case query.Pairs, query.Buckets, query.Rows, query.Where:
-		return result{}, &query.UsageError{Msg: fmt.Sprintf("verb: the verb %s is not built yet", q.Verb)}
+	case query.Pairs:
+		return d.runPairs(ctx, q, rowCap)
+	case query.Buckets:
+		return d.runBuckets(ctx, q)
+	case query.Rows:
+		return d.runRows(ctx, q, rowCap)
+	case query.Where:
+		return d.runWhere(ctx, q)
 	}
 	return result{}, &query.UsageError{Msg: fmt.Sprintf("verb: %q is not a verb", string(q.Verb))}
 }

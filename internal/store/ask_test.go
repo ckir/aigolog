@@ -7,11 +7,14 @@
 package store_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/ckir/aigolog/internal/query"
@@ -475,23 +478,6 @@ func TestRunAnswersOnADatabaseThatWasOpenedForReading(t *testing.T) {
 	}
 }
 
-func TestRunTheVerbsOfTheNextTaskAreNotBuiltYet(t *testing.T) {
-	d := mined(t, authBody(authLogins))
-	col, _, _ := userColumn(t, d)
-	for _, q := range []query.Question{
-		{Verb: query.Pairs, Columns: []query.Column{col}, By: "user", With: "user"},
-		{Verb: query.Buckets},
-		{Verb: query.Rows},
-		{Verb: query.Where, Value: "alice"},
-	} {
-		_, err := d.Run(bg, ask(q), query.Limits{})
-		var ue *query.UsageError
-		if !errors.As(err, &ue) || !strings.Contains(ue.Msg, "the verb "+string(q.Verb)+" is not built yet") {
-			t.Errorf("Run(%s) = %v, want a UsageError that says the verb is not built yet", q.Verb, err)
-		}
-	}
-}
-
 func TestRunAfterCloseReturnsErrClosed(t *testing.T) {
 	d := mined(t, authBody(authLogins))
 	if err := d.Close(); err != nil {
@@ -521,5 +507,63 @@ func TestRunTopCountsARecordOnceWhenTwoSlotsOfTheColumnHoldTheValue(t *testing.T
 	// The record "22 port 22" has the value 22 twice and counts once.
 	if want := "22|3|1.0000\nalice|1|0.3333\nbob|1|0.3333"; cells(a) != want || a.Total != 3 {
 		t.Errorf("rows\n%s\ntotal %d; want\n%s\ntotal 3", cells(a), a.Total, want)
+	}
+}
+
+func TestRunTopPutsTheValueWithTheHigherCountFirstWhateverItsByteOrder(t *testing.T) {
+	// zed sorts after abe and is named more often: the count comes before the
+	// value in the order.
+	d := mined(t, authBody([]login{{true, "zed", 22}, {true, "abe", 22}, {true, "zed", 22}, {true, "zed", 22}}))
+	col := acceptedColumn(t, d)
+	a := run(t, d, query.Question{Verb: query.Top, Columns: []query.Column{col}, By: "user"}, query.Limits{})
+	if want := "zed|3|0.7500\nabe|1|0.2500"; cells(a) != want {
+		t.Errorf("rows\n%s\nwant\n%s", cells(a), want)
+	}
+}
+
+func TestRunPatternsPutsThePatternWithMoreRecordsFirstWhateverItsID(t *testing.T) {
+	// The rejected line comes first in the body, so that its pattern has the
+	// lower id; the accepted pattern has more records.
+	ls := []login{{false, "alice", 80}, {true, "alice", 22}, {true, "bob", 22}, {true, "carol", 22}, {true, "dave", 25}}
+	d := mined(t, authBody(ls))
+	acc, rej := authPatterns(t, d)
+	if acc.ID <= rej.ID {
+		t.Fatalf("the accepted pattern has id %d, the rejected one %d: the test needs the first line's pattern to have the lower id", acc.ID, rej.ID)
+	}
+	a := run(t, d, query.Question{Verb: query.Patterns, Words: []string{"login"}}, query.Limits{})
+	if want := fmt.Sprintf("%d|4|%s\n%d|1|%s", acc.ID, acc.Text, rej.ID, rej.Text); cells(a) != want {
+		t.Errorf("rows\n%s\nwant\n%s", cells(a), want)
+	}
+}
+
+func TestACancelledContextReturnsItsError(t *testing.T) {
+	d := mined(t, authBody(authLogins))
+	ctx, cancel := context.WithCancel(bg)
+	cancel()
+	a, err := d.Run(ctx, ask(query.Question{Verb: query.Count}), query.Limits{Time: time.Minute})
+	if !errors.Is(err, context.Canceled) || errors.Is(err, query.ErrTimeLimit) {
+		t.Errorf("Run with a cancelled context = %v, want context.Canceled and not ErrTimeLimit", err)
+	}
+	if !reflect.DeepEqual(a, query.Answer{}) {
+		t.Errorf("answer = %+v, want the zero value", a)
+	}
+}
+
+func TestAQuestionWhoseOwnTimeIsOverGivesErrTimeLimitAndNoFigures(t *testing.T) {
+	d := mined(t, authBody(authLogins))
+	// A nanosecond is over before the first statement is stepped.
+	a, err := d.Run(bg, ask(query.Question{Verb: query.Count}), query.Limits{Time: time.Nanosecond})
+	if !errors.Is(err, query.ErrTimeLimit) {
+		t.Errorf("Run with Time 1ns = %v, want ErrTimeLimit", err)
+	}
+	if !reflect.DeepEqual(a, query.Answer{}) {
+		t.Errorf("answer = %+v, want the zero value", a)
+	}
+	// The caller's own deadline is not the limit of the question: its error
+	// is returned as it is.
+	ctx, cancel := context.WithTimeout(bg, time.Nanosecond)
+	defer cancel()
+	if _, err := d.Run(ctx, ask(query.Question{Verb: query.Count}), query.Limits{Time: time.Minute}); !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, query.ErrTimeLimit) {
+		t.Errorf("Run past the deadline of the caller = %v, want context.DeadlineExceeded", err)
 	}
 }
