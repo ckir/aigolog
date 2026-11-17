@@ -9,7 +9,7 @@ Nothing here blocks a merged sub-project. Entries dated 2026-11-16.
 - [x] `store.EngineVersion` has no cancelled-context test and returns driver errors unwrapped. `internal/store/engine.go` closed by part 1b
 - [x] The full usage text is not pinned; `cli_test.go` checks only the fragments `Usage:` and `Commands:`. `internal/cli/cli_test.go` closed by part 1b
 - [x] `winlog.Available`'s first-missing-procedure error path has no test (the package variables `procedures` and `wevtapi` cannot be swapped). `internal/winlog/api_windows.go` closed by part 1f (the loop is `available`, with the finder passed in; its tests run on the Windows machines of CI)
-- [ ] The `eventlog api missing` branch of `platformParts` has no test (it calls `winlog.Available`, which cannot be made to fail). `internal/cli/parts_windows.go`
+- [x] The `eventlog api missing` branch of `platformParts` has no test (it calls `winlog.Available`, which cannot be made to fail). `internal/cli/parts_windows.go` closed by part 1f (R4)
 - [x] No test sends a real SIGINT or SIGTERM to a running `aigolog`; the cli tests only cancel a context. The second-signal kill and `signal.Ignored` were checked by hand on Linux only. `internal/cli/analyze.go` closed by part 1e
 - [x] `Create`'s `O_EXCL`-collision and `os.SameFile` retry branches, the re-take path in the size phase (an entry that became running) and `Info.Size` staleness have no test (they need a seam). `internal/store/db.go`, `internal/store/retention.go` closed by part 1d
 - [x] The Windows fallback of `removeOrphanLock` (delete fails while the process holds the handle, close, retry once) is tested nowhere; the only test skips on Windows. `internal/store/retention.go` closed by part 1d
