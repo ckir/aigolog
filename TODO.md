@@ -59,6 +59,7 @@ Nothing here blocks a merged sub-project. Entries dated 2026-11-16.
 - [ ] `measure -log` prints the given path unscrubbed in the text report and in its errors (the path is the user's own). `cmd/measure/main.go`
 - [ ] The `DB` doc comment does not list `Answers` and `Answer` among the methods that return `ErrClosed`. `internal/store/db.go`
 - [ ] The full OpenSSH log was measured on this machine only (linux/amd64, 8 CPUs, not idle); not on Windows or ARM64, not from a cold cache. The write of an answer (`SaveAnswer`, `fileURI` with `mode=rw`, the lock of `acquire`) is proven on Linux only until CI runs it; a UNC cache folder is unproven for it as for `readOnlyURI`. `docs/acceptance/b2b-questions.md`
+- [ ] Hot-journal recovery test gaps (found by the review of `store.Open`'s recovery): no test pins that only code 776 triggers it (a missing path with its lock file present must still give `fs.ErrNotExist`; a corrupt file must keep its code-26 error and create no `-journal`); the "journal still there after the rollback" branch is untested; the read-only-folder message does not say that making the folder writable heals the database; a symlinked `.db` stats `path+"-journal"` while SQLite names the journal after the resolved path (no loop, only the raw 776). `internal/store/recover.go`, `internal/store/recover_test.go`
 
 ## CI
 
