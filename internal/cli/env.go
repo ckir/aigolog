@@ -39,6 +39,15 @@ type Env struct {
 	Zone      *time.Location
 }
 
+// engineVersion asks the store's engine for its version; a test replaces it.
+var engineVersion = store.EngineVersion
+
+// say writes the formatted text to w and reports whether the write worked.
+func say(w io.Writer, format string, a ...any) bool {
+	_, err := fmt.Fprintf(w, format, a...)
+	return err == nil
+}
+
 // RunEnv runs the command named by args in env and returns the process exit
 // code.
 func RunEnv(env Env, args []string) int {
@@ -61,7 +70,9 @@ func RunEnv(env Env, args []string) int {
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
-		fmt.Fprint(stdout, usage)
+		if !say(stdout, "%s", usage) {
+			return exitcode.Failure
+		}
 		return exitcode.OK
 	case "analyze":
 		return analyze(env, args[1:])
@@ -70,16 +81,19 @@ func RunEnv(env Env, args []string) int {
 	case "clean":
 		return clean(env, args[1:])
 	case "version":
-		fmt.Fprintf(stdout, "aigolog %s\n", buildinfo.Version)
-		fmt.Fprintf(stdout, "go %s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
-		engine, err := store.EngineVersion(context.Background())
+		ok := say(stdout, "aigolog %s\n", buildinfo.Version)
+		ok = say(stdout, "go %s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH) && ok
+		engine, err := engineVersion(context.Background())
 		if err != nil {
 			fmt.Fprintf(stderr, "aigolog: the store's engine does not work: %v\n", err)
 			return exitcode.Failure
 		}
-		fmt.Fprintf(stdout, "sqlite %s\n", engine)
+		ok = say(stdout, "sqlite %s\n", engine) && ok
 		for _, part := range platformParts() {
-			fmt.Fprintln(stdout, part)
+			ok = say(stdout, "%s\n", part) && ok
+		}
+		if !ok {
+			return exitcode.Failure
 		}
 		return exitcode.OK
 	default:

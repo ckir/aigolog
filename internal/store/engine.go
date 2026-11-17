@@ -10,6 +10,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver; written in Go, no C code
 )
@@ -22,13 +23,13 @@ const DriverName = "sqlite"
 func EngineVersion(ctx context.Context) (string, error) {
 	db, err := sql.Open(DriverName, ":memory:")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("opening an in-memory database: %w", err)
 	}
 	defer db.Close()
 
 	var version string
 	if err := db.QueryRowContext(ctx, `SELECT sqlite_version()`).Scan(&version); err != nil {
-		return "", err
+		return "", fmt.Errorf("asking SQLite for its version: %w", err)
 	}
 	return version, nil
 }

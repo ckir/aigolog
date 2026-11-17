@@ -8,6 +8,8 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"regexp"
 	"runtime"
 	"strings"
@@ -141,5 +143,70 @@ func TestRunVersionNamesTheEventLogAPIOnWindowsOnly(t *testing.T) {
 	}
 	if len(lines) != 3 {
 		t.Errorf("want 3 lines off Windows; got %d:\n%s", len(lines), out)
+	}
+}
+
+func TestVersionFailsWithOneAndSaysSoWhenTheEngineDoesNotWork(t *testing.T) {
+	old := engineVersion
+	t.Cleanup(func() { engineVersion = old })
+	engineVersion = func(context.Context) (string, error) { return "", errors.New("boom") }
+
+	code, out, errOut := run("version")
+	if code != exitcode.Failure {
+		t.Errorf("code = %d, want %d", code, exitcode.Failure)
+	}
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	if len(lines) < 2 || lines[0] != "aigolog "+buildinfo.Version || !strings.HasPrefix(lines[1], "go ") {
+		t.Errorf("stdout lacks the first two lines:\n%s", out)
+	}
+	if strings.Contains(out, "sqlite") {
+		t.Errorf("stdout has a sqlite line:\n%s", out)
+	}
+	if want := "aigolog: the store's engine does not work: boom\n"; errOut != want {
+		t.Errorf("stderr = %q, want %q", errOut, want)
+	}
+}
+
+func TestUsageTextIsPinned(t *testing.T) {
+	const want = `aigolog reads a log and says what it reveals.
+
+Usage:
+  aigolog <command> [arguments]
+
+Commands:
+  analyze   read logs into a database and say what was read
+  list      show the kept databases
+  clean     remove the kept databases that no run is using
+  version   print the version of the program and of its parts
+  help      print this text
+`
+	code, out, errOut := run("help")
+	if code != exitcode.OK {
+		t.Errorf("code = %d, want %d", code, exitcode.OK)
+	}
+	if out != want {
+		t.Errorf("the usage text changed; if on purpose, change this pin.\ngot:\n%s\nwant:\n%s", out, want)
+	}
+	if errOut != "" {
+		t.Errorf("stderr = %q, want empty", errOut)
+	}
+}
+
+// failingWriter fails every write.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("write failed") }
+
+func TestHelpVersionAndUsageReportAWriteError(t *testing.T) {
+	for _, arg := range []string{"help", "version"} {
+		var e bytes.Buffer
+		code := RunEnv(Env{Stdout: failingWriter{}, Stderr: &e}, []string{arg})
+		if code != exitcode.Failure {
+			t.Errorf("%s: code = %d, want %d", arg, code, exitcode.Failure)
+		}
+	}
+	code := RunEnv(Env{Stdout: &bytes.Buffer{}, Stderr: failingWriter{}}, nil)
+	if code != exitcode.Usage {
+		t.Errorf("no arguments: code = %d, want %d", code, exitcode.Usage)
 	}
 }

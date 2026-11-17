@@ -5,9 +5,9 @@ Nothing here blocks a merged sub-project. Entries dated 2026-11-16.
 
 ## Test gaps (deferred by the owner's scoping)
 
-- [ ] The `version` command's engine-failure branch (error from `store.EngineVersion`, message on stderr, exit 1) has no test. `internal/cli/env.go`
-- [ ] `store.EngineVersion` has no cancelled-context test and returns driver errors unwrapped. `internal/store/engine.go`
-- [ ] The full usage text is not pinned; `cli_test.go` checks only the fragments `Usage:` and `Commands:`. `internal/cli/cli_test.go`
+- [x] The `version` command's engine-failure branch (error from `store.EngineVersion`, message on stderr, exit 1) has no test. `internal/cli/env.go` closed by part 1b
+- [x] `store.EngineVersion` has no cancelled-context test and returns driver errors unwrapped. `internal/store/engine.go` closed by part 1b
+- [x] The full usage text is not pinned; `cli_test.go` checks only the fragments `Usage:` and `Commands:`. `internal/cli/cli_test.go` closed by part 1b
 - [ ] `winlog.Available`'s first-missing-procedure error path and the `eventlog api missing` branch of `platformParts` have no test (the package variables `procedures` and `wevtapi` cannot be swapped). `internal/winlog/api_windows.go`
 - [ ] No test sends a real SIGINT or SIGTERM to a running `aigolog`; the cli tests only cancel a context. The second-signal kill and `signal.Ignored` were checked by hand on Linux only. `internal/cli/analyze.go`
 - [ ] `Create`'s `O_EXCL`-collision and `os.SameFile` retry branches, the re-take path in the size phase (an entry that became running) and `Info.Size` staleness have no test (they need a seam). `internal/store/db.go`, `internal/store/retention.go`
@@ -20,7 +20,7 @@ Nothing here blocks a merged sub-project. Entries dated 2026-11-16.
 ## Defects and gaps in the gate
 
 - [x] `just fmt-check` exits 0 for a Go file that does not parse (measured: `gofmt -l` prints the parse error to stderr and nothing to stdout, so `test -z` passes); only `go vet` later in `just check` catches it. `justfile` closed by part 1a
-- [ ] `cli.Run` ignores write errors from `Fprint*`, so help and version return OK when stdout is closed. `internal/cli/env.go`
+- [x] `cli.Run` ignores write errors from `Fprint*`, so help and version return OK when stdout is closed. `internal/cli/env.go` closed by part 1b
 - [x] The header test walks `internal/**/testdata` while `license_args` ignores only the top-level `testdata/**`; a future fixture `.go` file there fails the test but not `license-check`. `internal/repocheck/header_test.go`, `justfile` closed by part 1a
 - [ ] `Open` never reads the `schema` row or validates the `meta` rows it created. B2 should read the version and schema before `Sweep` classifies a database (see the B2 inputs in the roadmap). `internal/store/db.go`, `internal/store/retention.go`
 
