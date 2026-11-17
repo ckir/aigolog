@@ -966,3 +966,39 @@ func TestOpenReadOnlyDoesNotRecreateADeletedFile(t *testing.T) {
 		t.Error("openReadOnly with no folder returned no error")
 	}
 }
+
+func TestResolveYearsLeavesAnUnresolvableDateAsNoStampAndKeepsItsStampLength(t *testing.T) {
+	d := newDB(t)
+	src, err := d.AddSource(ctx, Source{Name: "s", Format: "text", Encoding: "utf-8", Layout: "syslog", TimeKind: TimeWallYearInferred})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 30 February exists in no year, so YearResolver.Resolve gives no year to
+	// it; the record next to it has a date that exists.
+	const badLen, goodLen = 15, 16
+	recs := []record.Record{
+		{Source: src, Raw: "Feb 30 10:00:00 h a", Stamp: record.Stamp{State: record.YearPending, Month: 2, Day: 30, NanoOfDay: int64(10 * time.Hour), Len: badLen}},
+		{Source: src, Raw: "Jan  1 01:00:00 h b", Stamp: record.Stamp{State: record.YearPending, Month: 1, Day: 1, NanoOfDay: int64(time.Hour), Len: goodLen}},
+	}
+	if err := d.Append(ctx, recs); err != nil {
+		t.Fatal(err)
+	}
+	anchor, _ := timeparse.ParseAsOf("2026-01-05")
+	if err := d.ResolveYears(ctx, src, timeparse.NewYearResolver(anchor)); err != nil {
+		t.Fatal(err)
+	}
+	var got []record.Stamp
+	if err := d.Records(ctx, src, func(id int64, r record.Record) error { got = append(got, r.Stamp); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("read back %d records, want 2", len(got))
+	}
+	if want := (record.Stamp{State: record.NoStamp, Len: badLen}); got[0] != want {
+		t.Errorf("the record with 30 February = %+v, want %+v (no stamp, no time, the length kept)", got[0], want)
+	}
+	want := record.Stamp{State: record.Resolved, Nanos: time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC).UnixNano(), Len: goodLen}
+	if got[1] != want {
+		t.Errorf("the record with 1 January = %+v, want %+v", got[1], want)
+	}
+}

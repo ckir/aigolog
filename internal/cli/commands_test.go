@@ -1264,3 +1264,65 @@ func TestATextReportThatCannotBeWrittenExitsWithOneAndSaysSoAndTheDatabaseIsHand
 		t.Errorf("a working writer: code %d, stderr %q", code, errOut)
 	}
 }
+
+func TestAnalyzeNamesTheFilesModificationTimeAsTheAnchorWhenNoAsOfIsGiven(t *testing.T) {
+	h := newHarness(t) // the current time of the harness is 2026-02-01 12:00:00
+	p := h.file("syslog", "Jan 20 10:00:00 h a\nJan 21 11:00:00 h b\n")
+	mod := time.Date(2025, time.January, 25, 8, 30, 0, 0, time.UTC)
+	if err := os.Chtimes(p, mod, mod); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := h.run("analyze", p)
+	if code != exitcode.OK || errOut != "" {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	// The years follow the modification time (2025), not the current time
+	// (which would give 2026).
+	for _, want := range []string{
+		"  time: 2025-01-20 10:00:00 to 2025-01-21 11:00:00; as written, no zone stated",
+		"  years: worked out from the anchor 2025-01-25 08:30:00, the file's modification time",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+func TestAnalyzeSaysAnEmptyInputWasNotStoredWhenOtherInputsAre(t *testing.T) {
+	// A populated file with an empty file before it, and an empty standard
+	// input after it: the empty ones are named and not counted.
+	h := newHarness(t)
+	empty := h.file("empty.log", "")
+	full := h.file("full.log", "2026-01-05 10:00:01 a\n2026-01-05 10:00:09 b\n")
+	h.stdin = ""
+	code, out, errOut := h.run("analyze", empty, full, "-")
+	if code != exitcode.OK || errOut != "" {
+		t.Fatalf("code %d, stderr %q, output:\n%s", code, errOut, out)
+	}
+	for _, want := range []string{
+		"sources 1, records 2, lines 2",
+		"source -: " + empty + " is empty and was not stored\n",
+		"source -: standard input is empty and was not stored\n",
+		"source 1: " + full + " (utf-8, layout iso-space)\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "source 2:") {
+		t.Errorf("an empty input was numbered as a source:\n%s", out)
+	}
+	if dbCount(t, h.cache) != 1 {
+		t.Fatalf("databases kept: %d, want 1", dbCount(t, h.cache))
+	}
+	paths, _ := filepath.Glob(filepath.Join(h.cache, "*.db"))
+	db, err := store.Open(context.Background(), paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	infos, err := db.SourceInfos(context.Background())
+	if err != nil || len(infos) != 1 || infos[0].Name != full || infos[0].Records != 2 {
+		t.Errorf("the database holds %+v, %v; want only the populated source with 2 records", infos, err)
+	}
+}

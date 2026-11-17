@@ -8,6 +8,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,4 +97,20 @@ func TestGenlogWritesTheRequestedLinesAndRefusesAnUnknownKind(t *testing.T) {
 			t.Errorf("usage %q does not name the kinds", errOut.String())
 		}
 	})
+}
+
+// failingWriter is a standard output that refuses every write.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk is gone") }
+
+func TestGenlogReportsAFailureToWriteToStandardOutputAndExitsWithOne(t *testing.T) {
+	var errOut bytes.Buffer
+	code := run([]string{"-kind", "ssh", "-lines", "5"}, failingWriter{}, &errOut)
+	if code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+	if want := "genlog: writing the log: disk is gone\n"; errOut.String() != want {
+		t.Errorf("stderr %q, want %q", errOut.String(), want)
+	}
 }

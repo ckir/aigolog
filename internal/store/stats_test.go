@@ -789,3 +789,74 @@ func TestStatsMethodsAreReadOnly(t *testing.T) {
 		t.Errorf("a second call gave %v, the first %v", again, ps)
 	}
 }
+
+func TestPatternStatsGivesEachPatternTheSpanOfItsResolvedTimes(t *testing.T) {
+	// The stamps state a zone (Z), so the nanoseconds of each are those of the
+	// instant the test wrote. The lines of two shapes are interleaved and out of
+	// order in the file: the span of a pattern is its smallest and its largest
+	// time, not its first and last line, and not another pattern's time. A third
+	// shape has no time at all (its one record comes before the first stamp).
+	at := func(off int) time.Time { return t0.Add(time.Duration(off) * time.Second) }
+	stamped := func(off int, word string, n int) string {
+		return at(off).Format("2006-01-02T15:04:05Z") + " " + shapeLine(word, n) + "\n"
+	}
+	var b strings.Builder
+	b.WriteString(shapeLine("gamma", 0) + "\n")
+	b.WriteString(stamped(40, "alpha", 1))
+	b.WriteString(stamped(60, "beta", 2))
+	b.WriteString(stamped(10, "alpha", 3))
+	b.WriteString(stamped(20, "beta", 4))
+	b.WriteString(stamped(90, "alpha", 5))
+	d := mined(t, b.String())
+	ps, err := d.PatternStats(bg, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ps) != 3 {
+		t.Fatalf("%d patterns, want 3: %+v", len(ps), ps)
+	}
+	for _, c := range []struct {
+		word        string
+		records     int64
+		hasTimes    bool
+		first, last int64
+	}{
+		{"alpha", 3, true, at(10).UnixNano(), at(90).UnixNano()},
+		{"beta", 2, true, at(20).UnixNano(), at(60).UnixNano()},
+		{"gamma", 1, false, 0, 0},
+	} {
+		p := patternWith(t, ps, c.word)
+		if p.Records != c.records || p.HasTimes != c.hasTimes || p.FirstNanos != c.first || p.LastNanos != c.last {
+			t.Errorf("%s: records %d, has times %v, first %d, last %d; want %d, %v, %d, %d",
+				c.word, p.Records, p.HasTimes, p.FirstNanos, p.LastNanos, c.records, c.hasTimes, c.first, c.last)
+		}
+	}
+}
+
+func TestSlotStatsComputesTheNumericRangeOfDecimalSlots(t *testing.T) {
+	var b strings.Builder
+	for i, v := range []string{"0.5", "12.25", "3.75"} {
+		b.WriteString(withStamp(i, "svc load is "+v))
+	}
+	b.WriteString(portBody([]string{"alice", "bob", "carol"}, []int{22, 80, 25}))
+	d := mined(t, b.String())
+	ps, err := d.PatternStats(bg, 0)
+	if err != nil || len(ps) != 2 {
+		t.Fatalf("patterns = %+v, %v", ps, err)
+	}
+	load, err := d.SlotStats(bg, patternWith(t, ps, "load").ID, 5)
+	if err != nil || len(load) != 1 {
+		t.Fatalf("slots of load = %+v, %v", load, err)
+	}
+	if s := load[0]; s.Type != "dec" || !s.Numeric || s.Min != 0.5 || s.Max != 12.25 || s.Distinct != 3 || s.Total != 3 {
+		t.Errorf("load slot: type %s, numeric %v, min %v, max %v, distinct %d, total %d; want dec, true, 0.5, 12.25, 3, 3",
+			s.Type, s.Numeric, s.Min, s.Max, s.Distinct, s.Total)
+	}
+	name, err := d.SlotStats(bg, patternWith(t, ps, "login").ID, 5)
+	if err != nil || len(name) != 2 {
+		t.Fatalf("slots of login = %+v, %v", name, err)
+	}
+	if s := name[0]; s.Type != "word" || s.Numeric || s.Min != 0 || s.Max != 0 || s.Distinct != 3 {
+		t.Errorf("name slot: type %s, numeric %v, min %v, max %v, distinct %d; want word, false, 0, 0, 3", s.Type, s.Numeric, s.Min, s.Max, s.Distinct)
+	}
+}
