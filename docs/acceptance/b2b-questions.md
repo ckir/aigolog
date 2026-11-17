@@ -12,7 +12,7 @@ In the order it was done:
 4. **Task 4, the eight questions and the time limit.** `DB.Run` answers `patterns`, `slots`, `count`, `top`, `pairs`, `buckets`, `rows` and `where` over the records, cuts the rows and the bytes of an answer, and gives up with `ErrTimeLimit` when a question runs out of its time.
 5. **Task 5, `query` and `show`.** `aigolog query` asks a question of a kept database, prints the answer and stores it in the database as `A1`, `A2`, ...; `aigolog show` prints a kept database again (the run, the digest and the summary) with every stored answer, and `aigolog query --db P --answer A1` re-runs one of them.
 6. **Task 6, A2 and A3 through the command.** The sshd sample and the generated logs are carried through `analyze` and `query` to prove the acceptance tests A2 and A3 (the section below).
-7. **Task 7, the fetch recipe, `measure -log` and the measurement on the full log.** `just fetch-openssh` fetches the full OpenSSH log, `measure -log` measures a log of the user's own, and the first measurement of A6 is taken over it (the section below).
+7. **Task 7, the fetch recipe, `measure -log` and the measurement on the full log.** `just fetch-openssh-full` fetches the full OpenSSH log, `measure -log` measures a log of the user's own, and the first measurement of A6 is taken over it (the section below).
 8. **Task 8, the record.** This file, the tracker and the roadmap.
 
 ## The caps on the typed values of a token and of a message (Task 1)

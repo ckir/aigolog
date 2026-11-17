@@ -569,9 +569,10 @@ func TestAQuestionWhoseOwnTimeIsOverGivesErrTimeLimitAndNoFigures(t *testing.T) 
 	}
 }
 
-// manySlotsLine is a message of one pattern with 140 slots: 4 constant words
-// that key the tree, 110 constant words (254 tokens in all: the most a message holds is 256), 120 words that differ between lines
-// (each a wildcard slot) and 20 whole numbers (each a typed slot). n is the
+// manySlotsLine is a message of one pattern with 140 slots, in 254 tokens (a
+// message holds at most 256): 4 constant words that key the tree, 110 more
+// constant words, 120 words that differ between lines (each a wildcard slot)
+// and 20 whole numbers (each a typed slot). n is the
 // number of the line.
 func manySlotsLine(n int) string {
 	var b strings.Builder
