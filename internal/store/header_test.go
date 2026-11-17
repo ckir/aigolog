@@ -8,6 +8,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
@@ -111,5 +112,51 @@ func TestOpenReadsADatabaseWhosePathNeedsEscapingInAURI(t *testing.T) {
 	infos, err := List(dir)
 	if err != nil || len(infos) != 1 || infos[0].State != "complete" || infos[0].Records != 4 {
 		t.Errorf("List = %+v, %v", infos, err)
+	}
+}
+
+func TestOurRawHeader(t *testing.T) {
+	// header makes the first n bytes of a file: the magic text, filler, and the
+	// application_id at offset 68, big-endian.
+	header := func(n int, magic string, id uint32) []byte {
+		b := make([]byte, n)
+		copy(b, magic)
+		if n >= 72 {
+			binary.BigEndian.PutUint32(b[68:72], id)
+		}
+		return b
+	}
+	const magic = "SQLite format 3\x00"
+	for _, c := range []struct {
+		name string
+		b    []byte
+		want bool
+	}{
+		{"the magic and our id", header(100, magic, applicationID), true},
+		{"more than a header", header(4096, magic, applicationID), true},
+		{"the magic and another id", header(100, magic, 0x12345678), false},
+		{"the magic and no id", header(100, magic, 0), false},
+		{"our id and a bad magic", header(100, "SQLite format 4\x00", applicationID), false},
+		{"our id and no magic", header(100, "", applicationID), false},
+		{"our id little-endian", func() []byte {
+			b := header(100, magic, 0)
+			binary.LittleEndian.PutUint32(b[68:72], applicationID)
+			return b
+		}(), false},
+		{"the id one byte off", func() []byte {
+			b := make([]byte, 100)
+			copy(b, magic)
+			binary.BigEndian.PutUint32(b[67:71], applicationID)
+			return b
+		}(), false},
+		{"a slice of 99 bytes", header(99, magic, applicationID), false},
+		{"a slice of 72 bytes", header(72, magic, applicationID), false},
+		{"a slice of 16 bytes", []byte(magic), false},
+		{"an empty slice", []byte{}, false},
+		{"nil", nil, false},
+	} {
+		if got := ourRawHeader(c.b); got != c.want {
+			t.Errorf("%s: ourRawHeader = %v, want %v", c.name, got, c.want)
+		}
 	}
 }

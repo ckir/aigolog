@@ -47,9 +47,11 @@ type Info struct {
 	// be tested, for example for want of permission). Sweep removes an
 	// unreadable database only when it is shown not to be a finished database
 	// of aigolog: the file is empty, SQLite says it is not a database or that
-	// it is corrupt, or its header is not ours and its meta table is missing or
-	// has no complete row. A database whose header is ours and whose meta table
-	// cannot be read is kept like one the program does not know about. An
+	// it is corrupt and its first bytes are not a header of ours, or its header
+	// is not ours and its meta table is missing or has no complete row. A
+	// database whose header is ours and whose meta table cannot be read, or
+	// that SQLite finds malformed because the file was cut, is kept like one the
+	// program does not know about. An
 	// unreadable database for which the program does not know (busy, an I/O
 	// error, no permission, a lock that cannot be tested) is kept; under
 	// Policy.All it is removed too, unless its lock could not be tested.
@@ -260,8 +262,13 @@ func provenNotOurs(err error) bool {
 //     complete row is not ours, and a "schema" row other than this version's
 //     is "other".
 //
-// A file whose header cannot be read as a database (SQLite says it is not one,
-// or it is corrupt) is not ours, as before.
+// A file that SQLite cannot read as a database at all (it says the file is not
+// one, or is corrupt: this is what a finished database that was cut says, at
+// the first page it reads) is judged by its first 100 bytes, read without
+// SQLite (fileHasOurHeader). If they are a SQLite header with our
+// application_id the file is ours and cut or damaged: "unreadable" and unsure,
+// kept by every sweep but All. Any other such file is not ours, and is removed.
+// A file shorter than the header cannot be told, and is not ours.
 func inspect(info *Info) {
 	info.State, info.Records, info.Version, info.unsure = stateUnreadable, 0, "", false
 	if fi, err := os.Stat(info.Path); err != nil {
@@ -271,15 +278,23 @@ func inspect(info *Info) {
 		return // an empty file is not a database of aigolog
 	}
 	ctx := context.Background()
+	// unsureAfter marks the entry after an error that is not about a table: it
+	// is unsure unless the error proves the file is not ours (SQLite says it is
+	// not a database or is corrupt) and its first bytes are not our header
+	// either. A file of ours that was cut fails here ("malformed") before any
+	// table is read, and is kept.
+	unsureAfter := func(err error) {
+		info.unsure = !provenNotOurs(err) || fileHasOurHeader(info.Path)
+	}
 	d, err := openConnReadOnly(ctx, info.Path)
 	if err != nil {
-		info.unsure = !provenNotOurs(err)
+		unsureAfter(err)
 		return
 	}
 	defer d.closeConn()
 	appID, userVersion, err := d.readHeader(ctx)
 	if err != nil {
-		info.unsure = !provenNotOurs(err)
+		unsureAfter(err)
 		return
 	}
 	ours := appID == applicationID
@@ -394,10 +409,12 @@ func removeRun(path string, lock *os.File) (gone bool, err error) {
 // lock files that no database owns. A database whose run is in progress (its
 // lock is held) is never touched. An incomplete database is removed, and so is
 // an unreadable one that is shown not to be a finished database of aigolog
-// (the file is empty, SQLite says it is not a database or is corrupt, or it
-// has no header of ours and its meta table is missing or has no complete row).
-// A database with our header whose meta table cannot be read is not removed
-// (it may be of a later layout, or damaged); one of another layout is shown as
+// (the file is empty, SQLite says it is not a database or is corrupt and its
+// first 100 bytes are not the header of a database of ours, or it has no header
+// of ours and its meta table is missing or has no complete row). A database
+// with our header whose meta table cannot be read, or that SQLite finds
+// malformed because it was cut, is not removed (it may be of a later layout, or
+// damaged: only All removes it); one of another layout is shown as
 // "other" and goes like a complete one, by age or by the size limit. An entry about which the
 // program does not know (the lock file cannot be tested, or the database
 // cannot be opened or read for a reason that says nothing about the file: busy,

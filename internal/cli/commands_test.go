@@ -208,11 +208,16 @@ func TestASweepThatRemovesAnUnfinishedDatabaseSaysSo(t *testing.T) {
 		t.Fatalf("first run: code %d, stderr %q", code, errOut)
 	}
 	first := regexp.MustCompile(`(?m)^database: (.+\.db) \(`).FindStringSubmatch(out)[1]
-	fi, err := os.Stat(first)
+	// An unfinished run: the database is whole, and its complete mark is not set.
+	db, err := sql.Open(store.DriverName, first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Truncate(first, fi.Size()/2); err != nil {
+	_, err = db.Exec(`UPDATE meta SET value = '0' WHERE key = 'complete'`)
+	if cerr := db.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
 		t.Fatal(err)
 	}
 	code, _, errOut = h.run("analyze", p)
@@ -223,7 +228,7 @@ func TestASweepThatRemovesAnUnfinishedDatabaseSaysSo(t *testing.T) {
 		t.Errorf("standard error %q does not hold %q", errOut, want)
 	}
 	if _, err := os.Stat(first); !os.IsNotExist(err) || dbCount(t, h.cache) != 1 {
-		t.Errorf("the truncated database: %v; databases %d; want it gone and the new one left", err, dbCount(t, h.cache))
+		t.Errorf("the unfinished database: %v; databases %d; want it gone and the new one left", err, dbCount(t, h.cache))
 	}
 }
 

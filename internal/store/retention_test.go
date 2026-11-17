@@ -747,3 +747,84 @@ func TestOtherDatabasesCountTowardTheSizeLimit(t *testing.T) {
 		t.Errorf("older exists %v, newer exists %v, result %+v; want only the older removed", exists(older), exists(newer), res)
 	}
 }
+
+// copyOf writes the bytes of the file at src, cut to size bytes, as a database
+// named like ours (created) in dir, with a lock file next to it.
+func copyOf(t *testing.T, src, dir string, created time.Time, size int64) string {
+	t.Helper()
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, DatabaseName(created, "c0ffee00"))
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(path, size); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lockOf(path), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestATruncatedFinishedDatabaseIsKeptAsUnreadable(t *testing.T) {
+	whole := made(t, t.TempDir(), now.Add(-30*24*time.Hour), true, 3000)
+	fi, err := os.Stat(whole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := fi.Size()
+	if full < 20*4096 {
+		t.Fatalf("the database is %d bytes; the test needs more than 20 pages", full)
+	}
+	pageBelow := (full/4096 - 3) * 4096
+	for _, c := range []struct {
+		name string
+		size int64
+	}{
+		{"a page multiple below the real size", pageBelow},
+		{"in the middle of a page", pageBelow/2 + 1234},
+		{"exactly one page", 4096},
+		{"one page and 100 bytes", 4196},
+		{"exactly the header", 100},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := copyOf(t, whole, dir, now.Add(-30*24*time.Hour), c.size)
+			if got, _ := os.Stat(path); got.Size() != c.size {
+				t.Fatalf("the copy is %d bytes, want %d", got.Size(), c.size)
+			}
+			infos, err := List(dir)
+			if err != nil || len(infos) != 1 || infos[0].State != "unreadable" || !infos[0].unsure {
+				t.Fatalf("List = %+v, %v; want unreadable and unsure", infos, err)
+			}
+			// Old, over every limit: not removed.
+			res, err := Sweep(dir, Policy{MaxAge: time.Nanosecond, MaxTotalBytes: 1, Now: now})
+			if err != nil || !exists(path) || !exists(lockOf(path)) || len(res.Removed) != 0 || len(res.Kept) != 1 {
+				t.Fatalf("Sweep with a tiny age and size limit: %+v, %v; want it kept", res, err)
+			}
+			// All removes it, as the lock can be tested.
+			res, err = Sweep(dir, Policy{All: true, Now: now})
+			if err != nil || exists(path) || exists(lockOf(path)) || len(res.Removed) != 1 {
+				t.Errorf("Sweep All: %+v, %v; want it removed with its lock file", res, err)
+			}
+		})
+	}
+}
+
+func TestATruncatedFileShorterThanItsHeaderIsStillRemoved(t *testing.T) {
+	whole := made(t, t.TempDir(), now.Add(-30*24*time.Hour), true, 100)
+	for _, size := range []int64{50, 99} {
+		dir := t.TempDir()
+		path := copyOf(t, whole, dir, now.Add(-time.Hour), size)
+		infos, err := List(dir)
+		if err != nil || len(infos) != 1 || infos[0].State != "unreadable" || infos[0].unsure {
+			t.Fatalf("%d bytes: List = %+v, %v; want unreadable and not unsure", size, infos, err)
+		}
+		if _, err := Sweep(dir, Policy{MaxAge: 7 * 24 * time.Hour, Now: now}); err != nil || exists(path) {
+			t.Errorf("%d bytes: Sweep: %v, exists %v; want it removed", size, err, exists(path))
+		}
+	}
+}

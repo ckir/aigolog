@@ -8,8 +8,11 @@ package store
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"net/url"
+	"os"
 )
 
 // The two numbers that Create writes to the header of a database, and the
@@ -69,3 +72,39 @@ func readOnlyURI(path string) string {
 }
 
 func isASCIILetter(c byte) bool { return c|0x20 >= 'a' && c|0x20 <= 'z' }
+
+// rawHeaderSize is how many bytes at the start of a file the header of a
+// database takes.
+const rawHeaderSize = 100
+
+// sqliteMagic is the text at the start of every SQLite database file.
+const sqliteMagic = "SQLite format 3\x00"
+
+// ourRawHeader reports whether b, the first bytes of a file, are the header of
+// a SQLite database whose application_id (4 bytes, big-endian, at offset 68) is
+// ours. It needs the whole header: fewer than 100 bytes say nothing.
+func ourRawHeader(b []byte) bool {
+	if len(b) < rawHeaderSize || string(b[:len(sqliteMagic)]) != sqliteMagic {
+		return false
+	}
+	return binary.BigEndian.Uint32(b[68:72]) == applicationID
+}
+
+// fileHasOurHeader reads the first 100 bytes of the file at path, with no help
+// from SQLite, and reports whether they are the header of a database of ours
+// (ourRawHeader). SQLite refuses a file that was cut ("database disk image is
+// malformed") at the first page it reads, so for such a file the header is
+// all that shows whose it was. Any error, or a file shorter than the header,
+// means "cannot tell": false.
+func fileHasOurHeader(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	b := make([]byte, rawHeaderSize)
+	if _, err := io.ReadFull(f, b); err != nil {
+		return false
+	}
+	return ourRawHeader(b)
+}
