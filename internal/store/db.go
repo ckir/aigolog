@@ -681,13 +681,36 @@ func (d *DB) Close() error {
 	return first
 }
 
+// RemoveError is what Remove returns when the .db file is gone and another
+// file of the run is not (on Windows the lock file may not be deletable while
+// another process holds it open): the database is removed, and what stayed is
+// a file of no use. Its text is the cause's, unchanged.
+type RemoveError struct {
+	// DBGone is true: the .db file no longer exists. Remove returns a plain
+	// error when the .db file stayed.
+	DBGone bool
+	// Err is the first error: the file that could not be deleted, or the
+	// close that failed.
+	Err error
+}
+
+// Error implements error.
+func (e *RemoveError) Error() string { return e.Err.Error() }
+
+// Unwrap returns the cause.
+func (e *RemoveError) Unwrap() error { return e.Err }
+
+// removeAll deletes the lock file of Remove; a test replaces it.
+var removeAll = os.Remove
+
 // Remove closes the database and deletes its files. For a database that
 // Create made and that has not been closed, the .db file and its journal go
 // while the lock is still held, then the lock is released and the .lock file
 // goes. For a closed database, or one that Open opened, the DB holds no lock,
 // so the files are deleted without one: the caller must know that no live run
 // holds them. A file that is already gone is not an error; Remove returns the
-// first other error.
+// first other error: a *RemoveError when the .db file is gone and a later
+// step failed, a plain error when the .db file stayed.
 func (d *DB) Remove() error {
 	first := d.closeConn()
 	keep := func(err error) {
@@ -695,9 +718,14 @@ func (d *DB) Remove() error {
 			first = err
 		}
 	}
-	keep(os.Remove(d.path))
+	dbErr := os.Remove(d.path)
+	dbGone := dbErr == nil || errors.Is(dbErr, fs.ErrNotExist)
+	keep(dbErr)
 	keep(os.Remove(d.path + "-journal"))
 	keep(d.closeLock())
-	keep(os.Remove(d.lockPath))
+	keep(removeAll(d.lockPath))
+	if first != nil && dbGone {
+		return &RemoveError{DBGone: true, Err: first}
+	}
 	return first
 }

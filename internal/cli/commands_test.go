@@ -9,13 +9,14 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -142,6 +143,103 @@ func TestNoKeepRemovesTheDatabaseAndSaysSo(t *testing.T) {
 	}
 	if m, _ := filepath.Glob(filepath.Join(h.cache, "*.lock")); len(m) != 0 {
 		t.Errorf("lock files left: %v", m)
+	}
+}
+
+// removeRunWas replaces the seam of the --no-keep branch for one test.
+func removeRunWas(t *testing.T, f func(db *store.DB) error) {
+	t.Helper()
+	old := removeRun
+	removeRun = f
+	t.Cleanup(func() { removeRun = old })
+}
+
+func TestNoKeepSaysRemovedWhenOnlyTheLockFileStays(t *testing.T) {
+	h := newHarness(t)
+	removeRunWas(t, func(db *store.DB) error {
+		lock := strings.TrimSuffix(db.Path(), ".db") + ".lock"
+		if err := db.Remove(); err != nil {
+			return err
+		}
+		// What Windows does when it cannot delete the lock file: the database
+		// is gone and the lock file is not.
+		if err := os.WriteFile(lock, nil, 0o600); err != nil {
+			return err
+		}
+		return &store.RemoveError{DBGone: true, Err: errors.New("lock in use")}
+	})
+	code, out, errOut := h.run("analyze", "--no-keep", h.file("a.log", "x\n"))
+	if code != exitcode.OK {
+		t.Errorf("exit code %d, want 0; stderr %q", code, errOut)
+	}
+	if !strings.Contains(out, "database: removed at the end of the run (--no-keep)") || strings.Contains(out, "kept ") {
+		t.Errorf("the summary must say the database was removed:\n%s", out)
+	}
+	if want := "aigolog: warning: could not remove the database: lock in use\n"; errOut != want {
+		t.Errorf("standard error %q, want %q", errOut, want)
+	}
+	if dbCount(t, h.cache) != 0 || !hasFile(h.cache, "*.lock") {
+		t.Errorf("the folder must hold the lock file and no database; databases %d", dbCount(t, h.cache))
+	}
+}
+
+func TestNoKeepSaysKeptWhenTheDatabaseFileStays(t *testing.T) {
+	h := newHarness(t)
+	removeRunWas(t, func(db *store.DB) error { return errors.New("access denied") })
+	code, out, errOut := h.run("analyze", "--no-keep", h.file("a.log", "x\n"))
+	if code != exitcode.OK || !strings.Contains(errOut, "warning: could not remove the database: access denied") {
+		t.Errorf("exit code %d, stderr %q", code, errOut)
+	}
+	if strings.Contains(out, "removed at the end of the run") || !strings.Contains(out, "database: ") || !strings.Contains(out, "kept 7 days") {
+		t.Errorf("a database that is still there must be shown as kept:\n%s", out)
+	}
+}
+
+func TestASweepThatRemovesAnUnfinishedDatabaseSaysSo(t *testing.T) {
+	h := newHarness(t)
+	var body strings.Builder
+	for i := 0; i < 3000; i++ {
+		fmt.Fprintf(&body, "2026-01-05 10:00:01 line %d %s\n", i, strings.Repeat("x", 60))
+	}
+	p := h.file("a.log", body.String())
+	code, out, errOut := h.run("analyze", p)
+	if code != exitcode.OK || errOut != "" {
+		t.Fatalf("first run: code %d, stderr %q", code, errOut)
+	}
+	first := regexp.MustCompile(`(?m)^database: (.+\.db) \(`).FindStringSubmatch(out)[1]
+	fi, err := os.Stat(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(first, fi.Size()/2); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errOut = h.run("analyze", p)
+	if code != exitcode.OK {
+		t.Fatalf("second run: code %d, stderr %q", code, errOut)
+	}
+	if want := "aigolog: note: removed 1 databases that were not finished\n"; !strings.Contains(errOut, want) {
+		t.Errorf("standard error %q does not hold %q", errOut, want)
+	}
+	if _, err := os.Stat(first); !os.IsNotExist(err) || dbCount(t, h.cache) != 1 {
+		t.Errorf("the truncated database: %v; databases %d; want it gone and the new one left", err, dbCount(t, h.cache))
+	}
+}
+
+func TestASweepThatRemovesOnlyAFinishedDatabaseSaysNothing(t *testing.T) {
+	h := newHarness(t)
+	h.now = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	p := h.file("a.log", "x\n")
+	if code, _, errOut := h.run("analyze", p); code != exitcode.OK {
+		t.Fatalf("first run: code %d, stderr %q", code, errOut)
+	}
+	h.now = h.now.Add(8 * 24 * time.Hour)
+	code, _, errOut := h.run("analyze", p)
+	if code != exitcode.OK || errOut != "" {
+		t.Errorf("second run: code %d, stderr %q; an old finished database goes without a note", code, errOut)
+	}
+	if dbCount(t, h.cache) != 1 {
+		t.Errorf("databases %d, want the old one gone", dbCount(t, h.cache))
 	}
 }
 
@@ -557,16 +655,11 @@ func TestTheSummaryNotesRecordsCutAtOneMiBAndOnlyThen(t *testing.T) {
 }
 
 func TestOnlyTheSignalsThatAreNotIgnoredAreCaught(t *testing.T) {
+	// ignoring says that the given signals are ignored and no other.
 	ignoring := func(ignored ...os.Signal) func(os.Signal) bool {
-		return func(s os.Signal) bool {
-			for _, i := range ignored {
-				if s == i {
-					return true
-				}
-			}
-			return false
-		}
+		return func(s os.Signal) bool { return slices.Contains(ignored, s) }
 	}
+	// The function has no branch for Windows: the same two signals everywhere.
 	for _, tc := range []struct {
 		name    string
 		ignored func(os.Signal) bool
@@ -575,23 +668,16 @@ func TestOnlyTheSignalsThatAreNotIgnoredAreCaught(t *testing.T) {
 		{"none ignored", ignoring(), []os.Signal{os.Interrupt, syscall.SIGTERM}},
 		{"interrupt ignored", ignoring(os.Interrupt), []os.Signal{syscall.SIGTERM}},
 		{"terminate ignored", ignoring(syscall.SIGTERM), []os.Signal{os.Interrupt}},
-		{"both ignored", ignoring(os.Interrupt, syscall.SIGTERM), nil},
+		{"both ignored", ignoring(os.Interrupt, syscall.SIGTERM), []os.Signal{}},
 	} {
 		got := signalsToCatch(tc.ignored)
-		if len(got) != len(tc.want) {
+		if len(got) != len(tc.want) || !slices.Equal(got, tc.want) {
 			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
-			continue
-		}
-		for i := range got {
-			if got[i] != tc.want[i] {
-				t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
-			}
 		}
 	}
-	// The real predicate must work too.
-	if got := signalsToCatch(signal.Ignored); len(got) == 0 {
-		t.Skip("the test process ignores both signals")
-	}
+	// The real predicate is what interruptContext passes; that it is honoured
+	// by a real process is tested in process_test.go
+	// (TestSIGINTIgnoredAtStartIsStillIgnoredAndSIGTERMStops).
 }
 
 func TestAnalyzeWarnsOnceAboutKeptDatabasesItCannotRead(t *testing.T) {

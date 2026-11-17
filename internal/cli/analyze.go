@@ -210,6 +210,10 @@ func interruptContext(w io.Writer) (ctx context.Context, stop func()) {
 	}
 }
 
+// removeRun removes the database at the end of a --no-keep run; a test
+// replaces it.
+var removeRun = func(db *store.DB) error { return db.Remove() }
+
 // analyze reads logs into a new database and says what was read.
 func analyze(env Env, args []string) int {
 	a, code, ok := parseAnalyzeArgs(env, args)
@@ -269,6 +273,17 @@ func analyze(env Env, args []string) int {
 	for _, e := range splitErrors(err) {
 		warn(env.Stderr, e)
 	}
+	unfinished := 0
+	for _, r := range swept.Removed {
+		if r.State != "complete" {
+			unfinished++
+		}
+	}
+	if unfinished > 0 {
+		// A database that is cut short but was finished is judged not to be
+		// ours and goes with the others; the owner can see it go.
+		report(env.Stderr, fmt.Sprintf("note: removed %d databases that were not finished", unfinished))
+	}
 	unreadable := 0
 	for _, k := range swept.Kept {
 		if k.State == "unreadable" {
@@ -325,11 +340,14 @@ func analyze(env Env, args []string) int {
 	}
 	kept := true
 	if a.noKeep {
-		if rmErr := db.Remove(); rmErr != nil {
+		rmErr := removeRun(db)
+		if rmErr != nil {
 			report(env.Stderr, "warning: could not remove the database: "+rmErr.Error())
-		} else {
-			kept = false
 		}
+		// A file that stayed (the lock file, on Windows) is not the database:
+		// when the .db file is gone the summary says so.
+		var re *store.RemoveError
+		kept = rmErr != nil && !(errors.As(rmErr, &re) && re.DBGone)
 	}
 	printSummary(env.Stdout, res, db.Path(), size, kept, cfg.KeepDays)
 	if kept && !a.noKeep && size > cfg.MaxTotalBytes {

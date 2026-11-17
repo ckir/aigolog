@@ -275,6 +275,58 @@ func TestRemoveDeletesTheRunsFiles(t *testing.T) {
 	}
 }
 
+func TestRemoveReportsADatabaseThatWentWhileTheLockFileStayed(t *testing.T) {
+	d := newDB(t)
+	db, lock := d.Path(), strings.TrimSuffix(d.Path(), ".db")+".lock"
+	inUse := errors.New("lock in use")
+	removeAll = func(path string) error {
+		if path == lock {
+			return inUse
+		}
+		return os.Remove(path)
+	}
+	t.Cleanup(func() { removeAll = os.Remove })
+
+	err := d.Remove()
+	var re *RemoveError
+	if !errors.As(err, &re) || !re.DBGone {
+		t.Fatalf("Remove = %#v, want a *RemoveError with DBGone", err)
+	}
+	if !errors.Is(err, inUse) || re.Err != inUse || err.Error() != "lock in use" {
+		t.Errorf("the error must be the cause, unchanged: %q, Err %v", err, re.Err)
+	}
+	if _, statErr := os.Stat(db); !os.IsNotExist(statErr) {
+		t.Errorf("the database file is still there: %v", statErr)
+	}
+	if _, statErr := os.Stat(lock); statErr != nil {
+		t.Errorf("the lock file was removed although the seam refused: %v", statErr)
+	}
+}
+
+func TestRemoveGivesAPlainErrorWhenTheDatabaseFileStays(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a folder is made read-only with chmod on Unix only")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root is not stopped by the permissions of a folder")
+	}
+	d := newDB(t)
+	dir := filepath.Dir(d.Path())
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+
+	err := d.Remove()
+	var re *RemoveError
+	if err == nil || errors.As(err, &re) {
+		t.Fatalf("Remove = %#v, want a plain error: the database file is still there", err)
+	}
+	if _, statErr := os.Stat(d.Path()); statErr != nil {
+		t.Errorf("the database file is gone: %v", statErr)
+	}
+}
+
 // parentIsEmpty fails the test if the folder holds anything at all.
 func parentIsEmpty(t *testing.T, parent string) {
 	t.Helper()
