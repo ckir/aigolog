@@ -6,7 +6,10 @@
 
 package textsafe
 
-import "testing"
+import (
+	"testing"
+	"unicode/utf8"
+)
 
 func TestCleanLeavesPlainTextAlone(t *testing.T) {
 	for _, s := range []string{"", "auth.log", "/var/log/syslog", "κόσμος ✓", `C:\logs\a b.log`} {
@@ -45,6 +48,23 @@ func TestCleanNeverReturnsAControlCharacter(t *testing.T) {
 		for _, c := range got {
 			if c < 0x20 || (c >= 0x7f && c <= 0x9f) {
 				t.Errorf("Clean of U+%04X still holds U+%04X: %q", r, c, got)
+			}
+		}
+	}
+}
+
+func TestCleanKeepsTheReplacementCharacterAndEscapesATruncatedSequence(t *testing.T) {
+	if got := Clean("a\ufffdb"); got != "a\ufffdb" {
+		t.Errorf("Clean(a U+FFFD b) = %q, want it unchanged", got)
+	}
+	for _, in := range []string{"a\xe2\x82", "\xff"} {
+		got := Clean(in)
+		if got == "" || !utf8.ValidString(got) {
+			t.Errorf("Clean(%q) = %q: want a non-empty, valid UTF-8 result", in, got)
+		}
+		for i := 0; i < len(got); i++ {
+			if got[i] >= 0x80 {
+				t.Errorf("Clean(%q) = %q still holds the raw byte %#x", in, got, got[i])
 			}
 		}
 	}

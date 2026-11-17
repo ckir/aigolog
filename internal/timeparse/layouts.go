@@ -47,6 +47,8 @@ var Layouts = []Layout{
 	{Name: "rfc3339", Exact: true, goLayout: "2006-01-02T15:04:05Z07:00", zone: zoneColon},
 	{Name: "iso-space-offset", Exact: true, goLayout: "2006-01-02 15:04:05Z07:00", zone: zoneColon},
 	{Name: "iso-space-offset-sp", Exact: true, goLayout: "2006-01-02 15:04:05 -0700", zone: zonePlain},
+	{Name: "iso-t-offset-plain", Exact: true, goLayout: "2006-01-02T15:04:05-0700", zone: zonePlain},
+	{Name: "iso-space-offset-plain", Exact: true, goLayout: "2006-01-02 15:04:05-0700", zone: zonePlain},
 	{Name: "clf", Exact: true, goLayout: "02/Jan/2006:15:04:05 -0700", zone: zonePlain},
 	{Name: "iso-t", goLayout: "2006-01-02T15:04:05"},
 	{Name: "iso-space", goLayout: "2006-01-02 15:04:05"},
@@ -65,8 +67,10 @@ const detectLines = 100
 
 // WallNanos returns the nanoseconds since 1970 of the year, month, day, hour,
 // minute, second and nanosecond of t, read as UTC. The zone of t is dropped.
-func WallNanos(t time.Time) int64 {
-	return wallTime(t).UnixNano()
+// It is false when that time is too far from 1970 to be counted in an int64
+// (see nanosOf).
+func WallNanos(t time.Time) (int64, bool) {
+	return nanosOf(wallTime(t))
 }
 
 // wallTime returns the year, month, day, hour, minute, second and nanosecond
@@ -140,7 +144,8 @@ func (l Layout) Parse(line string) (record.Stamp, bool) {
 	if limit := len(l.goLayout) + maxSlack; len(line) > limit {
 		line = line[:limit]
 	}
-	text := line[skipPrefix(line):]
+	prefix := skipPrefix(line)
+	text := line[prefix:]
 
 	// time.Parse takes the whole text, so it reports what is left over after
 	// the longest stamp it can read, and that gives the longest prefix.
@@ -156,6 +161,9 @@ func (l Layout) Parse(line string) (record.Stamp, bool) {
 	if err != nil {
 		return record.Stamp{}, false
 	}
+	// The stamp covers the prefix and the matched text. line was cut at its
+	// end only, so this is an offset from the start of the line.
+	covered := prefix + len(text)
 
 	switch {
 	case l.YearPending:
@@ -164,19 +172,20 @@ func (l Layout) Parse(line string) (record.Stamp, bool) {
 			Month:     int(t.Month()),
 			Day:       t.Day(),
 			NanoOfDay: int64(time.Duration(t.Hour())*time.Hour + time.Duration(t.Minute())*time.Minute + time.Duration(t.Second())*time.Second + time.Duration(t.Nanosecond())),
+			Len:       covered,
 		}, true
 	case l.zone != zoneNone:
 		n, ok := nanosOf(t)
 		if !ok {
 			return record.Stamp{}, false
 		}
-		return record.Stamp{State: record.Resolved, Nanos: n, Exact: true, Zone: zoneText(text, l.zone)}, true
+		return record.Stamp{State: record.Resolved, Nanos: n, Exact: true, Zone: zoneText(text, l.zone), Len: covered}, true
 	}
 	n, ok := nanosOf(wallTime(t))
 	if !ok {
 		return record.Stamp{}, false
 	}
-	return record.Stamp{State: record.Resolved, Nanos: n}, true
+	return record.Stamp{State: record.Resolved, Nanos: n, Len: covered}, true
 }
 
 // zoneText returns the zone as written at the end of the matched text.

@@ -24,7 +24,11 @@ func clean(env Env, args []string) int {
 	for _, in := range res.Removed {
 		bytes += in.Size
 	}
-	fmt.Fprintf(env.Stdout, "removed %d databases, %d bytes; running %d\n", len(res.Removed), bytes, len(res.Running))
+	databases := "databases"
+	if len(res.Removed) == 1 {
+		databases = "database"
+	}
+	fmt.Fprintf(env.Stdout, "removed %d %s, %d bytes; running %d\n", len(res.Removed), databases, bytes, len(res.Running))
 	code = exitcode.OK
 	for _, e := range splitErrors(err) {
 		report(env.Stderr, e.Error())

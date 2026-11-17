@@ -9,7 +9,9 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +22,21 @@ func TestEngineVersionLooksLikeSQLite(t *testing.T) {
 	}
 	if !regexp.MustCompile(`^3\.\d+\.\d+$`).MatchString(got) {
 		t.Errorf("EngineVersion = %q, want something like 3.54.1", got)
+	}
+}
+
+func TestEngineVersionWithACancelledContextIsAnErrorThatNamesWhatFailed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := EngineVersion(ctx)
+	if err == nil {
+		t.Fatal("EngineVersion with a cancelled context returned no error")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want it to wrap context.Canceled", err)
+	}
+	if !strings.HasPrefix(err.Error(), "asking SQLite for its version:") {
+		t.Errorf("err = %q, want it to start with %q", err, "asking SQLite for its version:")
 	}
 }
 

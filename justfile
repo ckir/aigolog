@@ -3,7 +3,7 @@
 
 version := "0.1.0-dev"
 ldflags := "-X github.com/ckir/aigolog/internal/buildinfo.Version=" + version
-license_args := "-f source-header.txt -ignore 'testdata/**' -ignore 'docs/**' -ignore 'ideas/**' -ignore 'marketing/**' -ignore 'dist/**'"
+license_args := "-f source-header.txt -ignore 'testdata/**' -ignore '**/testdata/**' -ignore 'docs/**' -ignore 'ideas/**' -ignore 'marketing/**' -ignore 'dist/**'"
 
 # List the recipes.
 default:
@@ -24,7 +24,7 @@ fmt:
 
 # Fail if a Go file is not in the standard format.
 fmt-check:
-    @test -z "$(gofmt -l cmd internal)" || { echo "not formatted (run: just fmt):"; gofmt -l cmd internal; exit 1; }
+    @out=$(gofmt -l cmd internal 2>&1) || { echo "gofmt failed (a file may not parse):"; echo "$out"; exit 1; }; test -z "$out" || { echo "not formatted (run: just fmt):"; echo "$out"; exit 1; }
 
 # Vet the code for this machine.
 vet:
@@ -49,8 +49,24 @@ license-check:
 test:
     go test ./...
 
+# Fetch the sshd sample into testdata/fetched/ (git-ignored), checked against its recorded checksum; the test that needs it is skipped while it is absent.
+fetch-openssh:
+    sh scripts/ci/fetch-openssh.sh
+
 # The gate.
 check: fmt-check vet vet-cross license-check test
+
+# Write a generated test log (kind: ssh, restart or web) to a file, or to standard output when none is given.
+genlog kind seed="1" lines="1000" out="":
+    go run ./cmd/genlog -kind {{quote(kind)}} -seed {{quote(seed)}} -lines {{quote(lines)}} {{ if out == "" { "" } else { "-o " + quote(out) } }}
+
+# Measure the speed and memory of an analyze run on this machine; with no arguments it uses the size of the full OpenSSH log (see docs/measuring.md).
+measure *args:
+    go run ./cmd/measure {{args}}
+
+# A small measurement, to see that the command works: 20,000 lines, one run.
+measure-smoke:
+    go run ./cmd/measure -lines 20000 -runs 1
 
 # Build the program for the four targets into dist/.
 build:

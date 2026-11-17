@@ -49,6 +49,9 @@ func ParseName(base string) (created time.Time, ok bool) {
 	return t, true
 }
 
+// randomPartFunc makes the random part of a new name; a test replaces it.
+var randomPartFunc = randomPart
+
 // randomPart returns a new random part for a name: 4 random bytes in
 // lowercase hexadecimal.
 func randomPart() (string, error) {

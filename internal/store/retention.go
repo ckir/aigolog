@@ -26,22 +26,34 @@ const (
 	stateIncomplete = "incomplete"
 	stateRunning    = "running"
 	stateUnreadable = "unreadable"
+	// stateOther is a database of aigolog whose layout this version cannot read:
+	// the header says it is ours (or a B1 meta table says so) and the layout is
+	// not the one this version reads. It is finished and ours, so Sweep treats
+	// it like a complete database: it goes by age, by the size limit or under
+	// All, never at once.
+	stateOther = "other"
 )
 
 // Info describes one database in the folder of the databases.
 type Info struct {
 	Path    string    // the .db file
 	Created time.Time // the time in the name of the file (UTC)
-	Size    int64     // the size of the .db file, in bytes
+	Size    int64     // the size of the .db file, in bytes, at the scan (Sweep reads it again for the databases it keeps, when the size limit applies)
 	// State is "complete", "incomplete" (the run did not finish), "running"
-	// (another process holds the lock of the run) or "unreadable" (the file
+	// (another process holds the lock of the run), "other" (a database of
+	// aigolog whose layout this version cannot read: it goes by age, by the size
+	// limit or under Policy.All, and its Records is 0) or "unreadable" (the file
 	// could not be read as a database of aigolog, or its lock file could not
 	// be tested, for example for want of permission). Sweep removes an
 	// unreadable database only when it is shown not to be a finished database
 	// of aigolog: the file is empty, SQLite says it is not a database or that
-	// it is corrupt, or its meta table is missing or has no complete row. An
-	// unreadable database for which the program does not know (busy, an I/O
-	// error, no permission, a lock that cannot be tested) is kept; under
+	// it is corrupt and its first bytes are not a header of ours, or its header
+	// is not ours and its meta table is missing or has no complete row. A
+	// database whose header is ours and whose meta table cannot be read, or
+	// that SQLite finds malformed because the file was cut, is kept like one the
+	// program does not know about. An unreadable database for which the program
+	// does not know (busy, an I/O error, no permission, a lock that cannot be
+	// tested) is kept; under
 	// Policy.All it is removed too, unless its lock could not be tested.
 	State string
 	// Records and Version are read from the database. For a running database
@@ -236,7 +248,27 @@ func provenNotOurs(err error) bool {
 
 // inspect opens the database at info.Path, which no run holds, and sets
 // info.State, Records and Version, and the unsure mark. The connection is
-// closed before it returns.
+// closed before it returns. It reads the header of the file first, through a
+// connection that reads no table, and decides from it before it looks at
+// meta:
+//   - the header is ours (application_id) and its user_version is not the one
+//     this version reads: the state is "other", whatever the tables are (a
+//     later version may have renamed meta); Version is read from meta when
+//     meta is there;
+//   - the header is ours and meta cannot be read: "unreadable" and unsure, so
+//     no sweep but All removes it;
+//   - otherwise (our header with the layout this version reads, or no header
+//     at all, as in a database of B1) meta is read: no meta table or no
+//     complete row is not ours, and a "schema" row other than this version's
+//     is "other".
+//
+// A file that SQLite cannot read as a database at all (it says the file is not
+// one, or is corrupt: this is what a finished database that was cut says, at
+// the first page it reads) is judged by its first 100 bytes, read without
+// SQLite (fileHasOurHeader). If they are a SQLite header with our
+// application_id the file is ours and cut or damaged: "unreadable" and unsure,
+// kept by every sweep but All. Any other such file is not ours, and is removed.
+// A file shorter than the header cannot be told, and is not ours.
 func inspect(info *Info) {
 	info.State, info.Records, info.Version, info.unsure = stateUnreadable, 0, "", false
 	if fi, err := os.Stat(info.Path); err != nil {
@@ -246,22 +278,53 @@ func inspect(info *Info) {
 		return // an empty file is not a database of aigolog
 	}
 	ctx := context.Background()
-	d, meta, err := openReadOnly(ctx, info.Path)
+	// unsureAfter marks the entry after an error that is not about a table: it
+	// is unsure unless the error proves the file is not ours (SQLite says it is
+	// not a database or is corrupt) and its first bytes are not our header
+	// either. A file of ours that was cut fails here ("malformed") before any
+	// table is read, and is kept.
+	unsureAfter := func(err error) {
+		info.unsure = !provenNotOurs(err) || fileHasOurHeader(info.Path)
+	}
+	d, err := openConnReadOnly(ctx, info.Path)
 	if err != nil {
-		info.unsure = !provenNotOurs(err)
+		unsureAfter(err)
 		return
 	}
 	defer d.closeConn()
+	appID, userVersion, err := d.readHeader(ctx)
+	if err != nil {
+		unsureAfter(err)
+		return
+	}
+	ours := appID == applicationID
+	if ours && userVersion != schemaNumber {
+		info.State = stateOther
+		if meta, err := d.readMeta(ctx); err == nil {
+			info.Version = meta["version"]
+		}
+		return
+	}
+	meta, err := d.readMeta(ctx)
+	if err != nil {
+		// With our header the file is ours whatever the error says: it is kept.
+		info.unsure = ours || !provenNotOurs(err)
+		return
+	}
 	complete, ok := meta["complete"]
 	if !ok {
 		return // a meta table with no complete row is not ours
+	}
+	version, hasVersion := meta["version"]
+	if meta["schema"] != schemaVersion {
+		info.State, info.Version = stateOther, version
+		return
 	}
 	var records int64
 	if err := d.conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM records`).Scan(&records); err != nil {
 		info.unsure = true
 		return
 	}
-	version, hasVersion := meta["version"]
 	switch {
 	case complete != "1":
 		info.State, info.Records, info.Version = stateIncomplete, records, version
@@ -346,8 +409,13 @@ func removeRun(path string, lock *os.File) (gone bool, err error) {
 // lock files that no database owns. A database whose run is in progress (its
 // lock is held) is never touched. An incomplete database is removed, and so is
 // an unreadable one that is shown not to be a finished database of aigolog
-// (the file is empty, SQLite says it is not a database or is corrupt, or its
-// meta table is missing or has no complete row). An entry about which the
+// (the file is empty, SQLite says it is not a database or is corrupt and its
+// first 100 bytes are not the header of a database of ours, or it has no header
+// of ours and its meta table is missing or has no complete row). A database
+// with our header whose meta table cannot be read, or that SQLite finds
+// malformed because it was cut, is not removed (it may be of a later layout, or
+// damaged: only All removes it); one of another layout is shown as
+// "other" and goes like a complete one, by age or by the size limit. An entry about which the
 // program does not know (the lock file cannot be tested, or the database
 // cannot be opened or read for a reason that says nothing about the file: busy,
 // an I/O error, permission denied, too many open files) is shown as unreadable
@@ -356,7 +424,8 @@ func removeRun(path string, lock *os.File) (gone bool, err error) {
 // p.MaxTotalBytes. With p.All an unsure entry whose lock could
 // be tested and was free is removed like the others; one whose lock could not
 // be tested is still kept.
-// A complete database is removed when p.All, or when it is older than p.MaxAge;
+// A complete database, and one of another layout ("other"), is removed when
+// p.All, or when it is older than p.MaxAge;
 // then, if the .db files that remain add up to more than p.MaxTotalBytes, the
 // oldest databases that are not running are removed until they do not. Files
 // whose names are not ours, and anything that is not a regular file, are left
@@ -400,7 +469,7 @@ func Sweep(dir string, p Policy) (SweepResult, error) {
 			continue
 		}
 		inspect(&info)
-		remove := p.All || (!info.unsure && (info.State != stateComplete || (p.MaxAge > 0 && p.Now.Sub(info.Created) > p.MaxAge)))
+		remove := p.All || (!info.unsure && ((info.State != stateComplete && info.State != stateOther) || (p.MaxAge > 0 && p.Now.Sub(info.Created) > p.MaxAge)))
 		if !remove {
 			release(lock)
 			kept = append(kept, info)
@@ -418,6 +487,9 @@ func Sweep(dir string, p Policy) (SweepResult, error) {
 	}
 
 	if !p.All && p.MaxTotalBytes > 0 {
+		if beforeSizePhase != nil {
+			beforeSizePhase()
+		}
 		kept = sweepSize(kept, &res, p.MaxTotalBytes, &errs)
 	}
 	res.Kept = kept
@@ -433,6 +505,10 @@ func Sweep(dir string, p Policy) (SweepResult, error) {
 	return res, errors.Join(errs...)
 }
 
+// beforeSizePhase, when not nil, is called by Sweep just before the size phase.
+// A test sets it to change the folder between the scan and that phase.
+var beforeSizePhase func()
+
 // sweepSize removes the oldest of kept, one at a time, while the .db files of
 // the running and the kept databases add up to more than limit. A kept
 // database that is unsure (it cannot be read, so the program does not know
@@ -442,6 +518,17 @@ func Sweep(dir string, p Policy) (SweepResult, error) {
 // databases that are still kept; one that has become running is moved to
 // res.Running, and one that is removed to res.Removed.
 func sweepSize(kept []Info, res *SweepResult, limit int64, errs *[]error) []Info {
+	// The scan was a while ago, and a database that was not locked then may
+	// have grown since (a run that began on it is found by the lock test of
+	// the loop below). The size of each kept database is read again, so that the
+	// limit is about its size at this moment. A running database is in
+	// res.Running and is counted with the size the scan gave it; a writing run
+	// is not read again here.
+	for n := range kept {
+		if fi, err := os.Stat(kept[n].Path); err == nil {
+			kept[n].Size = fi.Size()
+		}
+	}
 	var total int64
 	for _, i := range res.Running {
 		total += i.Size

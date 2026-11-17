@@ -114,6 +114,20 @@ func TestWithoutAsOfAFileTakesItsModificationTimeAndStandardInputTheCurrentTime(
 	}
 }
 
+func TestAModificationTimeOutOfRangeFallsBackToTheCurrentTime(t *testing.T) {
+	d := newDB(t)
+	cur := time.Date(2027, 3, 2, 9, 0, 0, 0, time.UTC)
+	file := Input{Name: "f.log", R: strings.NewReader("Dec 28 10:00:00 h a\n"), ModTime: time.Date(1500, 1, 1, 0, 0, 0, 0, time.UTC)}
+	res, err := Run(ctx, d, []Input{file}, Options{Now: cur, Zone: time.UTC})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := res.Sources[0]
+	if s.Source.AnchorKind != store.AnchorNow || s.Source.AnchorNanos != wall(2027, 3, 2, 9, 0, 0) || s.Totals.FirstNanos != wall(2026, 12, 28, 10, 0, 0) {
+		t.Errorf("source = %+v, totals = %+v", s.Source, s.Totals)
+	}
+}
+
 func TestAnEmptyInputIsNotStoredAndTheRunGoesOn(t *testing.T) {
 	d := newDB(t)
 	res, err := Run(ctx, d, []Input{in("empty.log", ""), in("full.log", "x\n")}, Options{Now: time.Now(), Zone: time.UTC})

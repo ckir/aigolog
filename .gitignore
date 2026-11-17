@@ -32,3 +32,6 @@ go.work.sum
 # .idea/
 # .vscode/
 /dist/
+
+# Test logs that are fetched, not committed (LogHub's terms)
+testdata/fetched/

@@ -34,8 +34,15 @@ var procedures = []string{
 // reader will call. It finds the procedures and calls none of them. The error
 // names the first procedure that is missing.
 func Available() error {
-	for _, name := range procedures {
-		if err := wevtapi.NewProc(name).Find(); err != nil {
+	return available(func(name string) error { return wevtapi.NewProc(name).Find() }, procedures)
+}
+
+// available is the loop of Available with the finder passed in, so that its
+// error paths can be tested on a machine where every procedure exists. It
+// stops at the first name the finder fails for and wraps the finder's error.
+func available(find func(name string) error, names []string) error {
+	for _, name := range names {
+		if err := find(name); err != nil {
 			return fmt.Errorf("wevtapi.dll: %s: %w", name, err)
 		}
 	}

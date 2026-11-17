@@ -10,9 +10,12 @@ package cli
 
 import "github.com/ckir/aigolog/internal/winlog"
 
+// eventLogAvailable is winlog.Available; a test replaces it.
+var eventLogAvailable = winlog.Available
+
 // platformParts returns the lines that version prints after the sqlite line.
 func platformParts() []string {
-	if err := winlog.Available(); err != nil {
+	if err := eventLogAvailable(); err != nil {
 		return []string{"eventlog api missing: " + err.Error()}
 	}
 	return []string{"eventlog api ok"}

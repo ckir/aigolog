@@ -14,6 +14,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/ckir/aigolog/internal/miner"
 	"github.com/ckir/aigolog/internal/reader/text"
 	"github.com/ckir/aigolog/internal/record"
 	"github.com/ckir/aigolog/internal/store"
@@ -54,6 +55,12 @@ type Options struct {
 	// BatchSize is how many records are appended to the database at once; zero
 	// or less means 5,000.
 	BatchSize int
+	// Miner, when not nil, learns the message of every record as the record is
+	// stored (pass 1); Run then reads the records back from the database and
+	// gives each one its pattern and values (pass 2) before it marks the
+	// database complete. Nil means no mining: no pattern is stored. The miner
+	// must be new: it is finished by Run.
+	Miner *miner.Miner
 }
 
 // SourceReport tells what became of one input.
@@ -104,6 +111,8 @@ var ErrNothingToAnalyse = errors.New("nothing to analyse: every input is empty")
 // returned as an *InputError. An error of the store, and the error of ctx, are
 // returned as they are. When Run fails, the database is not marked complete.
 // When no input has a record, Run returns the Result and ErrNothingToAnalyse.
+// When o.Miner is not nil, Run mines every record (see Options.Miner) after
+// the last input is stored and before it marks the database complete.
 func Run(ctx context.Context, db *store.DB, inputs []Input, o Options) (Result, error) {
 	var res Result
 	zone := o.Zone
@@ -135,6 +144,11 @@ func Run(ctx context.Context, db *store.DB, inputs []Input, o Options) (Result, 
 	}
 	if !stored {
 		return res, ErrNothingToAnalyse
+	}
+	if o.Miner != nil {
+		if err := mine(ctx, db, o.Miner); err != nil {
+			return res, err
+		}
 	}
 	if err := db.MarkComplete(ctx); err != nil {
 		return res, err
@@ -184,7 +198,7 @@ func runInput(ctx context.Context, db *store.DB, in Input, o Options, zone *time
 		batch = append(batch, rec)
 		batchBytes += len(rec.Raw)
 		if len(batch) == cap(batch) || batchBytes >= maxBatchBytes {
-			if err := flush(ctx, db, batch); err != nil {
+			if err := flush(ctx, db, batch, o.Miner); err != nil {
 				return SourceReport{}, rd.Lines(), err
 			}
 			clear(batch)
@@ -200,7 +214,7 @@ func runInput(ctx context.Context, db *store.DB, in Input, o Options, zone *time
 		}
 	}
 	if len(batch) > 0 {
-		if err := flush(ctx, db, batch); err != nil {
+		if err := flush(ctx, db, batch, o.Miner); err != nil {
 			return SourceReport{}, rd.Lines(), err
 		}
 		clear(batch)
@@ -218,23 +232,35 @@ func runInput(ctx context.Context, db *store.DB, in Input, o Options, zone *time
 	return SourceReport{ID: id, Source: src, Totals: totals, CutRecords: rd.Cut()}, rd.Lines(), nil
 }
 
-// flush appends a batch, unless ctx is done.
-func flush(ctx context.Context, db *store.DB, batch []record.Record) error {
+// flush appends a batch, unless ctx is done. When m is not nil it first
+// learns the message of each record of the batch, as the record is appended.
+func flush(ctx context.Context, db *store.DB, batch []record.Record, m *miner.Miner) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if m != nil {
+		for i := range batch {
+			m.Learn(messageOf(batch[i].Raw, batch[i].Stamp.Len))
+		}
 	}
 	return db.Append(ctx, batch)
 }
 
 // anchor returns the kind and the wall-clock nanoseconds of the anchor of a
-// source that has no year.
+// source that has no year. A modification time that does not fit in int64
+// nanoseconds is not used: the current time is taken instead.
 func anchor(in Input, o Options, zone *time.Location, now time.Time) (string, int64) {
-	switch {
-	case o.AsOf != nil:
+	if o.AsOf != nil {
 		return store.AnchorAsOf, *o.AsOf
-	case !in.ModTime.IsZero():
-		return store.AnchorModTime, timeparse.WallNanos(in.ModTime.In(zone))
-	default:
-		return store.AnchorNow, timeparse.WallNanos(now.In(zone))
 	}
+	if !in.ModTime.IsZero() {
+		if n, ok := timeparse.WallNanos(in.ModTime.In(zone)); ok {
+			return store.AnchorModTime, n
+		}
+	}
+	n, ok := timeparse.WallNanos(now.In(zone))
+	if !ok {
+		n, _ = timeparse.WallNanos(time.Now().In(zone))
+	}
+	return store.AnchorNow, n
 }

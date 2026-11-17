@@ -25,7 +25,7 @@ as it is at the commit named in the message that started your session. If you be
 earlier copy, stop, fetch again, and re-read sections 1, 3 and 6 before going on.
 
 Why that session could not do this itself (measured there): the machine runs
-`Linux 7.0.0-43-generic x86_64`; it has no `wevtutil`, no Wine and no virtual machine support, and
+`Linux x86_64`; it has no `wevtutil`, no Wine and no virtual machine support, and
 the Windows Event Log exists only on Windows.
 
 What it is for: aigolog will read the Windows Event Log (design section 7.1 in
