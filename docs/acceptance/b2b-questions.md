@@ -1,6 +1,19 @@
-# B2b: the questions, stored answers and `query`
+# B2b: the questions, stored answers, `query` and `show`
 
 This record is written task by task. It holds the sections of Task 1 (the caps), Task 6 (A2 and A3) and Task 7 (A6).
+
+## What B2b built
+
+In the order it was done:
+
+1. **Task 1, the caps.** `Scan` takes at most 8 typed values from a token and 64 from a message, so that a pattern has at most 320 slots, and the number-dense generator `testlog.Dense` shows the effect on memory and on the size of the database (the section below).
+2. **Task 2, layout 3 and the write of an answer.** The database gains the table of stored answers (layout 3), and `SaveAnswer` writes one under the lock of `acquire`, so that no sweep and no other writer meets it; SQLite's own locking is the guard against a reader that has the file open.
+3. **Task 3, the model of a question and an answer.** The package `query` holds the question (eight verbs, columns of slots, filters, limits, a canonical text and a validation that names the field), the answer (columns, rows, facts, `Cut`, `Total`) and the rendering of an answer.
+4. **Task 4, the eight questions and the time limit.** `DB.Run` answers `patterns`, `slots`, `count`, `top`, `pairs`, `buckets`, `rows` and `where` over the records, cuts the rows and the bytes of an answer, and gives up with `ErrTimeLimit` when a question runs out of its time.
+5. **Task 5, `query` and `show`.** `aigolog query` asks a question of a kept database, prints the answer and stores it in the database as `A1`, `A2`, ...; `aigolog show` prints a stored answer or the list of them again.
+6. **Task 6, A2 and A3 through the command.** The sshd sample and the generated logs are carried through `analyze` and `query` to prove the acceptance tests A2 and A3 (the section below).
+7. **Task 7, the fetch recipe, `measure -log` and the measurement on the full log.** `just fetch-openssh` fetches the full OpenSSH log, `measure -log` measures a log of the user's own, and the first measurement of A6 is taken over it (the section below).
+8. **Task 8, the record.** This file, the tracker and the roadmap.
 
 ## The caps on the typed values of a token and of a message (Task 1)
 
@@ -88,3 +101,5 @@ All equal. (The four records of pattern 41, `Failed password for invalid user fr
 ### What these runs do not show
 
 A Windows or ARM64 measurement of the full log; a cold file cache; an idle machine (the load was 1.4 at the start and 2.9 to 6 later, from another project); the memory of `aigolog query` (not measured); the cost of the three statements that `top` and `pairs` run over the same record set (it is why `top` takes 2 to 4 s; a later change may share them).
+
+`SaveAnswer` (the write of an answer: `fileURI` with `mode=rw`, the lock of `acquire`, SQLite's locking with a reader open) and `query` and `show` are proven on Linux only, until CI runs them on the hosted Windows and ARM64 machines; a UNC cache folder is unproven for them, as it is for `readOnlyURI`. The CI run ids are added after the push.

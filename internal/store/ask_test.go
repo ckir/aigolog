@@ -369,13 +369,14 @@ func TestRunCutsRowsAndSaysSo(t *testing.T) {
 	if len(a.Rows) != 2 || a.Cut != "rows" || a.Total != 5 || a.Rows[0][0] != "u1" || a.Rows[1][0] != "u2" {
 		t.Errorf("Rows 2: rows %v cut %q total %d; want u1 and u2, \"rows\" and 5", a.Rows, a.Cut, a.Total)
 	}
-	// The limit of the question cuts as well, when it is the smaller.
+	// The limit of the question sets the cap (ruling R8), the smaller or the
+	// larger than the default.
 	q.Limit = 3
 	if b := run(t, d, q, query.Limits{Rows: 10}); len(b.Rows) != 3 || b.Cut != "rows" || b.Total != 5 {
 		t.Errorf("Limit 3: %d rows, cut %q, total %d; want 3, \"rows\" and 5", len(b.Rows), b.Cut, b.Total)
 	}
-	if b := run(t, d, q, query.Limits{Rows: 2}); len(b.Rows) != 2 || b.Cut != "rows" {
-		t.Errorf("Limit 3, Rows 2: %d rows, cut %q; want 2 and \"rows\"", len(b.Rows), b.Cut)
+	if b := run(t, d, q, query.Limits{Rows: 2}); len(b.Rows) != 3 || b.Cut != "rows" || b.Total != 5 {
+		t.Errorf("Limit 3, Rows 2: %d rows, cut %q, total %d; want 3, \"rows\" and 5", len(b.Rows), b.Cut, b.Total)
 	}
 	// Nothing is cut when everything fits.
 	q.Limit = 5
@@ -565,5 +566,99 @@ func TestAQuestionWhoseOwnTimeIsOverGivesErrTimeLimitAndNoFigures(t *testing.T) 
 	defer cancel()
 	if _, err := d.Run(ctx, ask(query.Question{Verb: query.Count}), query.Limits{Time: time.Minute}); !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, query.ErrTimeLimit) {
 		t.Errorf("Run past the deadline of the caller = %v, want context.DeadlineExceeded", err)
+	}
+}
+
+// manySlotsLine is a message of one pattern with 140 slots: 4 constant words
+// that key the tree, 110 constant words (254 tokens in all: the most a message holds is 256), 120 words that differ between lines
+// (each a wildcard slot) and 20 whole numbers (each a typed slot). n is the
+// number of the line.
+func manySlotsLine(n int) string {
+	var b strings.Builder
+	b.WriteString("svc many slots here")
+	for i := 0; i < 110; i++ {
+		fmt.Fprintf(&b, " c%d", i)
+	}
+	for i := 0; i < 120; i++ {
+		fmt.Fprintf(&b, " w%d%c", i, 'a'+rune(n%2))
+	}
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&b, " %d", n*100+i)
+	}
+	return b.String()
+}
+
+func TestRunSlotsOfAPatternWithManySlotsIsNotCutByTheRowCap(t *testing.T) {
+	var body strings.Builder
+	for n := 0; n < 4; n++ {
+		body.WriteString(withStamp(n, manySlotsLine(n)))
+	}
+	d := mined(t, body.String())
+	ps, err := d.PatternStats(bg, 0)
+	if err != nil || len(ps) != 1 {
+		t.Fatalf("patterns = %+v, %v; want one", ps, err)
+	}
+	const want = 140
+	for _, lim := range []query.Limits{query.DefaultLimits(), {Rows: 5}, {}} {
+		a := run(t, d, query.Question{Verb: query.Slots, Patterns: []int64{ps[0].ID}}, lim)
+		if len(a.Rows) != want || a.Total != want || a.Cut != "" {
+			t.Errorf("limits %+v: %d rows, total %d, cut %q; want %d, %d and \"\"", lim, len(a.Rows), a.Total, a.Cut, want, want)
+		}
+	}
+	// The byte cap still applies to the verb.
+	if b := run(t, d, query.Question{Verb: query.Slots, Patterns: []int64{ps[0].ID}}, query.Limits{Rows: 5, Bytes: 100}); b.Cut != "bytes" || len(b.Rows) >= want {
+		t.Errorf("Bytes 100: %d rows, cut %q; want fewer than %d and \"bytes\"", len(b.Rows), b.Cut, want)
+	}
+}
+
+func TestAFilterMatchesTheValueOnlyInTheSlotsOfItsColumn(t *testing.T) {
+	// The value alice is in the user slot of both patterns of authBody, and the
+	// column below has only the slot of the accepted pattern: alice is the user
+	// of 2 accepted lines and of 2 rejected ones (lines 3 and 6), and only the
+	// accepted ones are in the set.
+	d := mined(t, authBody(authLogins))
+	acc, rej := authPatterns(t, d)
+	col := query.Column{Name: "user", Slots: []int64{userSlot(t, d, acc.ID)}}
+	filter := []query.Filter{{Column: "user", Value: "alice"}}
+	a := run(t, d, query.Question{Verb: query.Count, Columns: []query.Column{col}, Filters: filter}, query.Limits{})
+	if cells(a) != "2" || a.Facts.Rows != 2 {
+		t.Errorf("alice in the accepted user slot only: count %s, facts %d records; want 2 (4 if the slot is ignored)", cells(a), a.Facts.Rows)
+	}
+	both := query.Column{Name: "user", Slots: []int64{col.Slots[0], userSlot(t, d, rej.ID)}}
+	if b := run(t, d, query.Question{Verb: query.Count, Columns: []query.Column{both}, Filters: filter}, query.Limits{}); cells(b) != "4" {
+		t.Errorf("alice in the user slots of both patterns: count %s, want 4", cells(b))
+	}
+
+	// The same value in two slots of one pattern: "job done by W for O", where
+	// alice is the worker of two lines and the owner of two others.
+	var body strings.Builder
+	for i, l := range [][2]string{{"alice", "bob"}, {"carol", "alice"}, {"alice", "carol"}, {"dave", "alice"}, {"bob", "dave"}} {
+		body.WriteString(withStamp(i, fmt.Sprintf("svc job done by %s for %s", l[0], l[1])))
+	}
+	e := mined(t, body.String())
+	ps, err := e.PatternStats(bg, 0)
+	if err != nil || len(ps) != 1 {
+		t.Fatalf("patterns = %+v, %v; want one", ps, err)
+	}
+	ss, err := e.SlotStats(bg, ps[0].ID, 0)
+	if err != nil || len(ss) != 2 {
+		t.Fatalf("slots = %+v, %v; want two", ss, err)
+	}
+	worker := query.Column{Name: "who", Slots: []int64{ss[0].Slot}}
+	owner := query.Column{Name: "who", Slots: []int64{ss[1].Slot}}
+	if ss[0].Pos > ss[1].Pos {
+		worker, owner = owner, worker
+	}
+	who := []query.Filter{{Column: "who", Value: "alice"}}
+	for _, c := range []struct {
+		name string
+		col  query.Column
+		want string
+	}{{"the worker slot", worker, "2"}, {"the owner slot", owner, "2"},
+		{"both slots", query.Column{Name: "who", Slots: []int64{ss[0].Slot, ss[1].Slot}}, "4"}} {
+		a := run(t, e, query.Question{Verb: query.Count, Columns: []query.Column{c.col}, Filters: who}, query.Limits{})
+		if cells(a) != c.want {
+			t.Errorf("alice in %s: count %s, want %s", c.name, cells(a), c.want)
+		}
 	}
 }

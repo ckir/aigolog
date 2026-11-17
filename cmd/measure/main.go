@@ -89,10 +89,11 @@ type options struct {
 	json       bool
 	bars       bool
 	smallLines int
-	// log is the path of a log to measure, as the user gave it and cleaned; ""
-	// when the log is generated. logAbs is the same file as an absolute path,
-	// because the program runs in another folder. For a given log, lines is
-	// counted from the file.
+	// log is the path of a log to measure, passed through filepath.Clean and
+	// printed as given (it is the user's own path, so it is not made safe with
+	// textsafe.Clean); "" when the log is generated. logAbs is the same file as
+	// an absolute path, because the program runs in another folder. For a given
+	// log, lines is counted from the file.
 	log    string
 	logAbs string
 }

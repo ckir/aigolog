@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -64,6 +65,21 @@ func TestParseAnswerReturnsWhatWasEncodedAndNeverNilRows(t *testing.T) {
 		if _, err := ParseAnswer(s); err == nil {
 			t.Errorf("ParseAnswer(%q) succeeded", s)
 		}
+	}
+}
+
+func TestARefEncodesWithLowerCaseKeys(t *testing.T) {
+	b, err := json.Marshal(Facts{Rows: 2, First: &Ref{Source: 1, Line: 7}, Last: &Ref{Source: 2, Line: 9}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"first":{"source":1,"line":7}`, `"last":{"source":2,"line":9}`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("Facts encodes as %s, want it to hold %s", b, want)
+		}
+	}
+	if strings.Contains(string(b), `"Source"`) || strings.Contains(string(b), `"Line"`) {
+		t.Errorf("Facts encodes as %s, with a capitalised key", b)
 	}
 }
 

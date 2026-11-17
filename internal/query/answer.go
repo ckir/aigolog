@@ -15,7 +15,10 @@ import (
 )
 
 // Ref is a position in the logs: the number of a source and a line in it.
-type Ref struct{ Source, Line int64 }
+type Ref struct {
+	Source int64 `json:"source"`
+	Line   int64 `json:"line"`
+}
 
 // Facts are what an answer states about the records it covers, besides its
 // rows (design 7.6).

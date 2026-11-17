@@ -31,9 +31,10 @@ type result struct {
 // error of ctx when the caller cancelled it. lim.Rows, lim.Bytes and lim.Time
 // at 0 or less mean no cap.
 //
-// The rows are cut to lim.Rows (and to q.Limit, when set and smaller), and then
-// by their bytes to lim.Bytes; Cut says which, "rows" when both applied, and
-// Total is the number of rows before the cut. Each cell is held to
+// The rows are cut to q.Limit when it is set and to lim.Rows when it is not
+// (slots and buckets are never cut by rows), and then by their bytes to
+// lim.Bytes; Cut says which, "rows" when both applied, and Total is the number
+// of rows before the cut. Each cell is held to
 // query.MaxCellBytes.
 func (d *DB) Run(ctx context.Context, q query.Question, lim query.Limits) (query.Answer, error) {
 	if d.conn == nil {
@@ -74,17 +75,23 @@ func (d *DB) Run(ctx context.Context, q query.Question, lim query.Limits) (query
 	return a, nil
 }
 
-// rowCap is the most rows the answer may hold: the smaller of lim.Rows and
-// q.Limit that is above 0; 0 when neither is.
+// rowCap is the most rows the answer may hold: q.Limit when it is above 0 (the
+// user asked for that many, at most 1000 by Validate), otherwise lim.Rows, the
+// default. 0 means no cap: lim.Rows at 0 or less with no q.Limit, and always
+// for slots (at most the slots of one pattern, which the miner bounds) and
+// buckets (at most 200, which Validate bounds), which constants bound; the byte
+// cap still applies to them.
 func rowCap(q query.Question, lim query.Limits) int {
-	n := lim.Rows
-	if n < 0 {
-		n = 0
+	if q.Verb == query.Slots || q.Verb == query.Buckets {
+		return 0
 	}
-	if q.Limit > 0 && (n == 0 || q.Limit < n) {
-		n = q.Limit
+	if q.Limit > 0 {
+		return q.Limit
 	}
-	return n
+	if lim.Rows < 0 {
+		return 0
+	}
+	return lim.Rows
 }
 
 // answer checks the numbers of the question and runs its verb. A verb may

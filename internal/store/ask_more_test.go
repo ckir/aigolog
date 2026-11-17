@@ -564,3 +564,47 @@ func TestAQuestionThatRunsOutOfTimeGivesNoFiguresAndErrTimeLimit(t *testing.T) {
 	}
 	t.Logf("the test took %v (a duration note, not a measurement of the program), over %d records", time.Since(started), size)
 }
+
+// shapeBody is n lines of one pattern, one second apart.
+func shapeBody(n int) string {
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		b.WriteString(withStamp(i, shapeLine("login", i)))
+	}
+	return b.String()
+}
+
+func TestRunLimitRaisesTheRowCapAboveTheDefault(t *testing.T) {
+	d := mined(t, shapeBody(300))
+	lim := query.DefaultLimits() // Rows is 100
+
+	// With no limit in the question, the default cuts.
+	a := run(t, d, query.Question{Verb: query.Rows}, lim)
+	if len(a.Rows) != 100 || a.Cut != "rows" || a.Total != 300 {
+		t.Errorf("no limit: %d rows, cut %q, total %d; want 100, \"rows\" and 300", len(a.Rows), a.Cut, a.Total)
+	}
+	// The limit of the question sets the cap, above the default.
+	b := run(t, d, query.Question{Verb: query.Rows, Limit: 500}, lim)
+	if len(b.Rows) != 300 || b.Cut != "" || b.Total != 300 {
+		t.Errorf("Limit 500: %d rows, cut %q, total %d; want 300, \"\" and 300", len(b.Rows), b.Cut, b.Total)
+	}
+	c := run(t, d, query.Question{Verb: query.Rows, Limit: 150}, lim)
+	if len(c.Rows) != 150 || c.Cut != "rows" || c.Total != 300 {
+		t.Errorf("Limit 150: %d rows, cut %q, total %d; want 150, \"rows\" and 300", len(c.Rows), c.Cut, c.Total)
+	}
+	// The cap of the question is not a way round the bytes.
+	e := run(t, d, query.Question{Verb: query.Rows, Limit: 500}, query.Limits{Rows: 100, Bytes: 200})
+	if e.Cut != "bytes" || len(e.Rows) == 0 || len(e.Rows) >= 300 {
+		t.Errorf("Limit 500 with Bytes 200: %d rows, cut %q; want some, fewer than 300, \"bytes\"", len(e.Rows), e.Cut)
+	}
+}
+
+func TestRunBucketsAbove100AreNotCut(t *testing.T) {
+	d := mined(t, shapeBody(300))
+	for _, lim := range []query.Limits{query.DefaultLimits(), {Rows: 5}} {
+		a := run(t, d, query.Question{Verb: query.Buckets, Buckets: 150}, lim)
+		if len(a.Rows) != 150 || a.Total != 150 || a.Cut != "" {
+			t.Errorf("limits %+v: %d rows, total %d, cut %q; want 150, 150 and \"\"", lim, len(a.Rows), a.Total, a.Cut)
+		}
+	}
+}
