@@ -210,3 +210,55 @@ func TestHelpVersionAndUsageReportAWriteError(t *testing.T) {
 		t.Errorf("no arguments: code = %d, want %d", code, exitcode.Usage)
 	}
 }
+
+// nthFailingWriter fails the write numbered failAt (counting from 1) and
+// accepts every other write.
+type nthFailingWriter struct {
+	failAt int
+	writes int
+}
+
+func (w *nthFailingWriter) Write(p []byte) (int, error) {
+	w.writes++
+	if w.writes == w.failAt {
+		return 0, errors.New("write failed")
+	}
+	return len(p), nil
+}
+
+func TestVersionReturnsFailureWhicheverOneWriteFails(t *testing.T) {
+	// aigolog line, go line, sqlite line, and one line per platform part.
+	lines := 3 + len(platformParts())
+	for n := 1; n <= lines; n++ {
+		w := &nthFailingWriter{failAt: n}
+		var e bytes.Buffer
+		code := RunEnv(Env{Stdout: w, Stderr: &e}, []string{"version"})
+		if code != exitcode.Failure {
+			t.Errorf("write %d of %d fails: code = %d, want %d", n, lines, code, exitcode.Failure)
+		}
+		if w.writes != lines {
+			t.Errorf("write %d of %d fails: version made %d writes, want %d (it must go on after a failed write)", n, lines, w.writes, lines)
+		}
+	}
+	// With no write failing the same writer sees the same number of writes.
+	w := &nthFailingWriter{}
+	code := RunEnv(Env{Stdout: w, Stderr: &bytes.Buffer{}}, []string{"version"})
+	if code != exitcode.OK || w.writes != lines {
+		t.Errorf("no write fails: code = %d (want %d), writes = %d (want %d)", code, exitcode.OK, w.writes, lines)
+	}
+}
+
+func TestVersionWithAFailingEngineAndAFailingWriteSaysTheSame(t *testing.T) {
+	old := engineVersion
+	t.Cleanup(func() { engineVersion = old })
+	engineVersion = func(context.Context) (string, error) { return "", errors.New("boom") }
+
+	var e bytes.Buffer
+	code := RunEnv(Env{Stdout: failingWriter{}, Stderr: &e}, []string{"version"})
+	if code != exitcode.Failure {
+		t.Errorf("code = %d, want %d", code, exitcode.Failure)
+	}
+	if want := "aigolog: the store's engine does not work: boom\n"; e.String() != want {
+		t.Errorf("stderr = %q, want %q", e.String(), want)
+	}
+}
