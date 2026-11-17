@@ -18,8 +18,10 @@
 // Both are built only by the read-only queries of package store, and both are
 // plain data with json tags, so that the report can encode them as they are.
 // The same database gives the same bytes: no map, clock or random number
-// reaches Build or Render, and times are written in UTC from stored
-// nanoseconds.
+// reaches Build or Render. Times are written from stored nanoseconds, and no
+// zone is assumed: the word UTC follows a time only where the log states its
+// zone (a source whose times are exact); any other time is shown as written,
+// with no zone word.
 //
 // Every string that comes from a log (a pattern, a value, a source name) goes
 // through textsafe.Clean and is then cut, so that no control character, no

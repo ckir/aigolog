@@ -361,7 +361,7 @@ func TestListShowsTheKeptDatabaseAndCleanRemovesIt(t *testing.T) {
 		t.Errorf("list line = %q (fields %q)", out, fields)
 	}
 	code, out, _ := h.run("clean")
-	if code != exitcode.OK || !regexp.MustCompile(`^removed 1 databases, [0-9]+ bytes; running 0\n$`).MatchString(out) {
+	if code != exitcode.OK || !regexp.MustCompile(`^removed 1 database, [0-9]+ bytes; running 0\n$`).MatchString(out) {
 		t.Errorf("clean: code %d, output %q", code, out)
 	}
 	if dbCount(t, h.cache) != 0 {
