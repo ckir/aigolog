@@ -53,6 +53,9 @@ jobs:
       - name: Install addlicense
         run: go install github.com/google/addlicense@v1.2.0
 
+      - name: Fetch the sshd sample
+        run: just fetch-openssh
+
       - name: The gate
         run: just check
 

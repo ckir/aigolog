@@ -49,6 +49,10 @@ license-check:
 test:
     go test ./...
 
+# Fetch the sshd sample into testdata/fetched/ (git-ignored), checked against its recorded checksum; the test that needs it is skipped while it is absent.
+fetch-openssh:
+    sh scripts/ci/fetch-openssh.sh
+
 # The gate.
 check: fmt-check vet vet-cross license-check test
 

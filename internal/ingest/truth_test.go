@@ -322,3 +322,71 @@ func TestTheGeneratedLogsHaveTheTimeRulesOfTheirLayouts(t *testing.T) {
 		}
 	})
 }
+
+// TestTheSshdSampleKeepsTheFiguresOfTheDesignThroughTheMiner carries the real
+// sshd sample (2,000 lines) through the miner and checks the figures of the
+// design's section 9 with SQL written here. The names, and the combined columns
+// they need, are for the queries of B2b. The test is skipped while the sample
+// is not fetched.
+func TestTheSshdSampleKeepsTheFiguresOfTheDesignThroughTheMiner(t *testing.T) {
+	data := testlog.OpenSSH2k(t)
+	const failed = "%Failed password%"
+	const accepted = "%Accepted %"
+	for _, w := range ways {
+		t.Run(w.name, func(t *testing.T) {
+			db, res := mineLog(t, w, data, wallNanos(2026, time.December, 31, 0, 0, 0))
+			if res.Records != 2000 {
+				t.Fatalf("%d records, want 2000", res.Records)
+			}
+			if n := one(t, db, `SELECT COUNT(*) FROM records`); n != 2000 {
+				t.Errorf("%d records stored, want 2000", n)
+			}
+			if n := one(t, db, `SELECT SUM(records) FROM patterns WHERE text LIKE ?`, failed); n != 520 {
+				t.Errorf("the patterns that hold Failed password add up to %d records, want 520", n)
+			}
+			if n := one(t, db, `SELECT COUNT(*) FROM records r JOIN patterns p ON p.id = r.pattern WHERE p.text LIKE ?`, failed); n != 520 {
+				t.Errorf("the records of the Failed password patterns are %d, want 520", n)
+			}
+			if n := one(t, db, `SELECT COUNT(DISTINCT v.value) FROM slot_values v JOIN slots s ON s.id = v.slot JOIN patterns p ON p.id = s.pattern
+WHERE p.text LIKE ? AND s.type = 'ip4'`, failed); n != 23 {
+				t.Errorf("%d distinct addresses, want 23", n)
+			}
+
+			var recs, line int
+			if err := db.QueryRow(`SELECT COUNT(*), MIN(r.line) FROM records r JOIN patterns p ON p.id = r.pattern WHERE p.text LIKE ?`, accepted).Scan(&recs, &line); err != nil {
+				t.Fatal(err)
+			}
+			if recs != 1 || line != 956 {
+				t.Errorf("the patterns that hold Accepted have %d records, the first at line %d; want 1, at line 956", recs, line)
+			}
+
+			// The rows of an address in the ip4 slots of the Failed password
+			// patterns: how many, and the first and the last line.
+			const ofAddress = `FROM slot_values a JOIN slots s ON s.id = a.slot JOIN patterns p ON p.id = s.pattern
+JOIN records r ON r.id = a.record
+WHERE p.text LIKE ? AND s.type = 'ip4' AND a.value = ?`
+			for _, c := range []struct {
+				address     string
+				rows        int
+				first, last int // 0 when the design gives no line
+			}{
+				{"183.62.140.253", 286, 1024, 1997},
+				{"187.141.143.180", 80, 0, 0},
+			} {
+				if n := one(t, db, `SELECT COUNT(*) `+ofAddress, failed, c.address); n != c.rows {
+					t.Errorf("%s has %d rows, want %d", c.address, n, c.rows)
+				}
+				if c.first == 0 {
+					continue
+				}
+				var first, last int
+				if err := db.QueryRow(`SELECT MIN(r.line), MAX(r.line) `+ofAddress, failed, c.address).Scan(&first, &last); err != nil {
+					t.Fatal(err)
+				}
+				if first != c.first || last != c.last {
+					t.Errorf("%s: first and last line %d and %d, want %d and %d", c.address, first, last, c.first, c.last)
+				}
+			}
+		})
+	}
+}
