@@ -44,6 +44,8 @@ Nothing here blocks a merged sub-project. Entries dated 2026-11-16.
 - [ ] `readOnlyURI` is not shown to work for a Windows UNC cache folder (`\\server\share\...`): it builds `file:` plus the escaped path with no authority, and nothing has run it on Windows. `internal/store/header.go`
 - [ ] Sub-project C's A10 test (no sshd words in the engine) must exclude or reword `internal/miner/miner.go` (a comment names sshd and `Failed password`) and `internal/testlog` (the generators). `internal/miner/miner.go`, `internal/testlog`
 - [ ] The summary cuts a source name at about 20 bytes and keeps the head of the path; the file name, which is the useful part, is lost. `internal/summary/render.go`
+- [ ] In a run of several sources where one states a zone and another does not, the summary prints the times of the first as converted to UTC under a heading that says `times as written in the log (no zone is assumed)`; a reader cannot tell which line is which. `internal/summary/render.go`
+- [ ] Three comments are stale after the zone fix: `summaryTime` in `internal/cli/analyze.go` ("UTC is right for every kind"), `stamp` in `internal/summary/render.go` ("as a time in UTC"), and `internal/store/retention.go` (an unsure entry's "size counted above", which the loop above skips).
 
 ## CI
 
