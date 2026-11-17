@@ -9,7 +9,9 @@ may be written only against code that exists. So part 1 is built as eight sub-pr
 another. Each ends in a program that runs and in named acceptance tests that pass. Only the first
 has a detailed plan today. Each later one gets its plan when the one before it has been merged.
 The owner accepted this cut, this order and the branching ("yes", 2026-11-16), after the second
-model and I had each recommended the same.
+model and I had each recommended the same. B2 was split in two on 2026-11-17, at the owner's
+choice, after the second model and I had each recommended it: the line-level plan of the questions
+can only be written against the tables that B2a builds.
 
 ## The sub-projects, in order
 
@@ -17,8 +19,9 @@ model and I had each recommended the same.
 |---|---|---|---|---|
 | A | Foundation | The Go module and command; `just`, `lefthook`, `addlicense`; a workflow that builds the four targets and runs the gate on Linux and on GitHub's Windows x64 and ARM64 machines | A1 | `2026-11-16-a-foundation.md` |
 | B1 | Ingest | Records and the reader plug point; the text reader (7.1 "Text lines"); the time rules (7.2); the store (7.4): one database per run, lock, complete mark, version, retention, `--no-keep`; `analyze` that stores, `list`, `clean`; the configuration file (7.13) | The time cases and the two-analyses case of A2 | after A is merged |
-| B2 | Patterns and questions | The two-pass miner (7.3); the eight questions and stored answers (7.6); the digest and the summary (7.5); the report with no model (7.10), `--summary`, `--json`; `query`, `show`; the generators and the fetch recipe for the test logs; a first measurement of size on the full OpenSSH log | A2 for text logs, A3, A7 | after B1 is merged |
-| C | The model | The OpenAI-compatible client (7.8); the tools offered to it; the bounded investigation (7.7); findings and the evidence rule (7.9); the report with findings; the privacy rules; extra request fields | A4 on text logs, A8, A10, A11 | after B2 is merged |
+| B2a | Patterns and the report | The open items of `TODO.md` (first task); the store's second layout (patterns, slots, values; schema 2); the two-pass miner (7.3); the digest and the summary (7.5); the report with no model (7.10), `--summary`, `--json`; the generators of the test logs and the fetch recipe of the sshd sample; a first measurement of the layout on a generated log of 655,146 lines | A2 for text logs (the miner's patterns and values), A7 | after B1 is merged |
+| B2b | Questions | The eight questions and stored answers (7.6); `query`, `show`; A3 on the sshd sample; the first measurement of size on the full OpenSSH log | A2 for text logs (through the query tools), A3, A6 (first measurement) | after B2a is merged |
+| C | The model | The OpenAI-compatible client (7.8); the tools offered to it; the bounded investigation (7.7); findings and the evidence rule (7.9); the report with findings; the privacy rules; extra request fields | A4 on text logs, A8, A10, A11 | after B2b is merged |
 | D | JSON lines | The second reader, the journal's export (7.1 "JSON lines"); named fields as slots | The JSON-lines and journal cases of A2 | after C is merged |
 | E | Windows event XML | The decoder for event XML, in ordinary Go, with the rewriting of forbidden characters and the `eventxml` format | The Windows cases of A2, from `testdata/windows-events/` | after D is merged |
 | F | Windows live reader | The Event Log API from Go; Windows' words (a pattern per kind, a cited event's message); rights and the refusal; where a read stops; `--eventlog`, `.evtx` | A9, the Windows part of A4 | after E is merged |
@@ -27,8 +30,8 @@ model and I had each recommended the same.
 Why this order. Whether a model can use the summary and the tools is not known (design section
 14). If it cannot, the summary and the tools change, and that is cheaper to learn before three
 more readers are built on them: so C comes straight after the text engine. The unknown with the
-deepest rework is whether the pure-Go SQLite store is fast enough on a large log, so B2 ends with
-a first measurement on the full OpenSSH log (the second model's addition). The test suite must
+deepest rework is whether the pure-Go SQLite store is fast enough on a large log, so B2b ends with
+a first measurement on the full OpenSSH log (B2a measures the layout on a generated log of the same size first) (the second model's addition). The test suite must
 pass on Windows x64 and ARM64 (the owner's ruling), so those machines run the gate from A on.
 
 F may be split in two when its turn comes (the reader; Windows' words). That is decided in its
@@ -69,11 +72,11 @@ first needs it, and the task that measures it replaces the value.
 
 | Value | First needed in | Measured by |
 |---|---|---|
-| The summary's size budget (7.5) | B2 | C, on the first runs with a model |
-| The size cap and the time limit of an answer (7.6) | B2 | B2's size measurement |
-| The total size limit of kept databases (7.4) | B1 | B2's size measurement (the design: "set after A6") |
+| The summary's size budget (7.5) | B2a | C, on the first runs with a model |
+| The size cap and the time limit of an answer (7.6) | B2b | B2b's size measurement |
+| The total size limit of kept databases (7.4) | B1 | B2a's measurement and B2b's size measurement (the design: "set after A6") |
 | The three limits of the investigation: tool calls, time, bytes sent (7.7) | C | C's first runs ("set after the first measurement") |
-| The cap on the number of patterns (7.3) | B2 | B2, on the test logs |
+| The cap on the number of patterns (7.3) | B2a | B2a, on the test logs |
 | The default bound of a live Windows read is not one of these: the design fixes seven days (7.1) | F | |
 
 ## Still open with the owner
