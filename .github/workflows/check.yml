@@ -59,6 +59,9 @@ jobs:
       - name: The gate
         run: just check
 
+      - name: Measure a small log
+        run: just measure-smoke
+
       - name: Build the four targets
         run: just build
 

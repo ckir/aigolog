@@ -60,6 +60,14 @@ check: fmt-check vet vet-cross license-check test
 genlog kind seed="1" lines="1000" out="":
     go run ./cmd/genlog -kind {{quote(kind)}} -seed {{quote(seed)}} -lines {{quote(lines)}} {{ if out == "" { "" } else { "-o " + quote(out) } }}
 
+# Measure the speed and memory of an analyze run on this machine; with no arguments it uses the size of the full OpenSSH log (see docs/measuring.md).
+measure *args:
+    go run ./cmd/measure {{args}}
+
+# A small measurement, to see that the command works: 20,000 lines, one run.
+measure-smoke:
+    go run ./cmd/measure -lines 20000 -runs 1
+
 # Build the program for the four targets into dist/.
 build:
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "{{ldflags}}" -o dist/aigolog-linux-amd64 ./cmd/aigolog
