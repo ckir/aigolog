@@ -332,9 +332,19 @@ func (d *DB) abort(err error) error {
 // returns for the first that fails: the version of aigolog that wrote the
 // database (a *VersionError), its layout (a *SchemaError), the time of its
 // creation (an error that says it is not a database of aigolog), and that the
-// run that made it finished (ErrIncomplete).
+// run that made it finished (ErrIncomplete). A database that a write of
+// SaveAnswer left unfinished (a hot journal: the process died in its commit)
+// cannot be read through a read-only connection; Open then rolls the write
+// back, once, under the lock of the database (recoverHotJournal), and goes on
+// as for any database; if it cannot, it returns a plain error that says so.
 func Open(ctx context.Context, path string) (*DB, error) {
 	d, meta, err := openReadOnly(ctx, path)
+	if err != nil && hotJournalError(err) {
+		if err := recoverHotJournal(ctx, path); err != nil {
+			return nil, err
+		}
+		d, meta, err = openReadOnly(ctx, path)
+	}
 	if err != nil {
 		return nil, err
 	}

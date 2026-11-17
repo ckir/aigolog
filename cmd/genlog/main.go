@@ -18,7 +18,7 @@ import (
 	"github.com/ckir/aigolog/internal/testlog"
 )
 
-const usage = "Usage: genlog -kind ssh|restart|web [-seed N] [-lines N] [-o file]"
+const usage = "Usage: genlog -kind ssh|restart|web|dense [-seed N] [-lines N] [-o file]"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -33,7 +33,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, usage)
 		fs.PrintDefaults()
 	}
-	kind := fs.String("kind", "", "the kind of log: ssh, restart or web")
+	kind := fs.String("kind", "", "the kind of log: ssh, restart, web or dense")
 	seed := fs.Int64("seed", 1, "the seed: the same seed gives the same log")
 	lines := fs.Int("lines", 1000, "the number of lines, at least 1")
 	out := fs.String("o", "", "the file to write; the log goes to standard output when it is not given")
@@ -59,8 +59,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		data, _ = testlog.Restart(*seed, *lines)
 	case "web":
 		data, _ = testlog.Web(*seed, *lines)
+	case "dense":
+		data = testlog.Dense(*seed, *lines)
 	default:
-		fmt.Fprintf(stderr, "genlog: unknown kind %q: want ssh, restart or web\n%s\n", *kind, usage)
+		fmt.Fprintf(stderr, "genlog: unknown kind %q: want ssh, restart, web or dense\n%s\n", *kind, usage)
 		return exitcode.Usage
 	}
 	if *out == "" {

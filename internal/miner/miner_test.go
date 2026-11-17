@@ -539,3 +539,50 @@ func TestMemoryOfLearningDoesNotGrowWithUniqueMessages(t *testing.T) {
 	}
 	runtime.KeepAlive(m)
 }
+
+// denseLines makes n lines of MaxTokens tokens: three words and a fourth token
+// without a digit, then tokens of 30 to 42 comma-separated integers each.
+func denseLines(seed int64, n int) []string {
+	rng := rand.New(rand.NewSource(seed))
+	lines := make([]string, n)
+	for i := range lines {
+		toks := []string{"dense", letters(i % 3), letters(i / 3), letters(7)}
+		for len(toks) < MaxTokens {
+			nums := make([]string, 30+rng.Intn(13))
+			for k := range nums {
+				nums[k] = fmt.Sprint(rng.Intn(1000000))
+			}
+			toks = append(toks, strings.Join(nums, ","))
+		}
+		lines[i] = strings.Join(toks, " ")
+	}
+	return lines
+}
+
+func TestNumberDenseLinesGiveFewSlotsAndMatchTheyAgree(t *testing.T) {
+	lines := denseLines(1, 40)
+	m := New(DefaultConfig())
+	learnAll(m, lines)
+	ps := m.Finish()
+	for _, p := range ps {
+		typed := 0
+		for _, s := range p.Slots {
+			if s != Word {
+				typed++
+			}
+		}
+		if typed > MaxMessageValues || len(p.Slots) > MaxMessageValues+MaxTokens {
+			t.Errorf("pattern %d has %d typed slots and %d in all, want at most %d and %d",
+				p.ID, typed, len(p.Slots), MaxMessageValues, MaxMessageValues+MaxTokens)
+		}
+	}
+	for i, l := range lines {
+		id, vals := m.Match(l)
+		if id == 0 {
+			t.Fatalf("line %d went to the catch-all", i+1)
+		}
+		if len(vals) != len(ps[id-1].Slots) {
+			t.Fatalf("line %d: %d values for the %d slots of pattern %d", i+1, len(vals), len(ps[id-1].Slots), id)
+		}
+	}
+}

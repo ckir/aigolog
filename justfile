@@ -53,6 +53,10 @@ test:
 fetch-openssh:
     sh scripts/ci/fetch-openssh.sh
 
+# Fetch the whole OpenSSH log (655,146 lines) into testdata/fetched/ (git-ignored), checked against its recorded checksums.
+fetch-openssh-full:
+    sh scripts/ci/fetch-openssh-full.sh
+
 # The gate.
 check: fmt-check vet vet-cross license-check test
 
@@ -67,6 +71,10 @@ measure *args:
 # A small measurement, to see that the command works: 20,000 lines, one run.
 measure-smoke:
     go run ./cmd/measure -lines 20000 -runs 1
+
+# Measure an analyze run on the whole OpenSSH log, which fetch-openssh-full puts in testdata/fetched/ (see docs/measuring.md).
+measure-full *args:
+    go run ./cmd/measure -log testdata/fetched/SSH_full.log {{args}}
 
 # Build the program for the four targets into dist/.
 build:

@@ -285,3 +285,51 @@ func TestJSONIsWrittenWithOneWrite(t *testing.T) {
 		t.Errorf("%d writes, want 1", w.writes)
 	}
 }
+
+// TestWriteValueEscapesTheSameControlsAsWriteJSON: the encoding of WriteJSON is
+// WriteValue's, for any value, so that a document that is not a Report (an
+// answer to a question) has the same escapes of DEL, the C1 controls and the
+// direction controls, the same absence of HTML escaping, and one Write.
+func TestWriteValueEscapesTheSameControlsAsWriteJSON(t *testing.T) {
+	type doc struct {
+		Text  string   `json:"text"`
+		Cells []string `json:"cells"`
+	}
+	v := doc{Text: "a\x7fb\u0085c\u202ed <*>&", Cells: []string{"\u009b", "x"}}
+	var w countingWriter
+	if err := WriteValue(&w, v); err != nil {
+		t.Fatal(err)
+	}
+	if w.writes != 1 {
+		t.Errorf("%d writes, want 1", w.writes)
+	}
+	want := "{\n  \"text\": \"a\\u007fb\\u0085c\\u202ed <*>&\",\n  \"cells\": [\n    \"\\u009b\",\n    \"x\"\n  ]\n}\n"
+	if got := w.String(); got != want {
+		t.Errorf("WriteValue wrote\n%q\nwant\n%q", got, want)
+	}
+	var back doc
+	if err := json.Unmarshal(w.Bytes(), &back); err != nil || back.Text != v.Text || back.Cells[0] != "\u009b" {
+		t.Errorf("the value did not come back: %v %+v", err, back)
+	}
+	// WriteJSON is WriteValue of the report.
+	var a, b bytes.Buffer
+	if err := WriteJSON(&a, sample("a\x7f\u202e")); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteValue(&b, sample("a\x7f\u202e")); err != nil {
+		t.Fatal(err)
+	}
+	if a.String() != b.String() {
+		t.Error("WriteJSON and WriteValue of the same report differ")
+	}
+}
+
+func TestWriteValueWritesNothingWhenTheValueCannotBeEncoded(t *testing.T) {
+	var w countingWriter
+	if err := WriteValue(&w, make(chan int)); err == nil {
+		t.Error("a channel was encoded")
+	}
+	if w.writes != 0 {
+		t.Errorf("%d writes after an encoding error, want 0", w.writes)
+	}
+}

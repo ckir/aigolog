@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-// generators are the three logs, by the name of their kind.
+// generators are the logs, by the name of their kind.
 var generators = []struct {
 	kind string
 	make func(seed int64, lines int) []byte
@@ -27,6 +27,7 @@ var generators = []struct {
 	{"ssh", func(seed int64, lines int) []byte { b, _ := SSH(seed, lines); return b }},
 	{"restart", func(seed int64, lines int) []byte { b, _ := Restart(seed, lines); return b }},
 	{"web", func(seed int64, lines int) []byte { b, _ := Web(seed, lines); return b }},
+	{"dense", Dense},
 }
 
 // splitLines returns the lines of data, without their line ends. It fails the
@@ -40,6 +41,48 @@ func splitLines(t *testing.T, data []byte) []string {
 		t.Fatalf("the log does not end with a line feed: %q", data[max(0, len(data)-20):])
 	}
 	return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+}
+
+func TestDenseIsDeterministicAndMakesTwoHundredFiftySixTokenLines(t *testing.T) {
+	a, b := Dense(9, 12), Dense(9, 12)
+	if !bytes.Equal(a, b) {
+		t.Fatal("the same seed gave other bytes")
+	}
+	lines := splitLines(t, a)
+	if len(lines) != 12 {
+		t.Fatalf("%d lines, want 12", len(lines))
+	}
+	clusters := map[string]bool{}
+	for i, l := range lines {
+		f := strings.Fields(l)
+		if len(f) != 256 {
+			t.Fatalf("line %d has %d fields, want 256", i+1, len(f))
+		}
+		if f[0] != "dense" {
+			t.Errorf("line %d starts with %q, want dense", i+1, f[0])
+		}
+		if strings.ContainsAny(strings.Join(f[:4], " "), "0123456789") {
+			t.Errorf("line %d holds a digit before the fifth field: %q", i+1, f[:4])
+		}
+		clusters[strings.Join(f[:4], " ")] = true
+		for _, tok := range f[4:] {
+			nums := strings.Split(tok, ",")
+			if len(nums) < 30 || len(nums) > 42 {
+				t.Fatalf("line %d: a token of %d integers, want 30 to 42", i+1, len(nums))
+			}
+			for _, n := range nums {
+				if v, err := strconv.Atoi(n); err != nil || v < 1 || v > 999999 || n[0] == '0' {
+					t.Fatalf("line %d: %q is not an integer of 1 to 6 digits", i+1, n)
+				}
+			}
+		}
+	}
+	if len(clusters) != 12 {
+		t.Errorf("%d distinct first four tokens in 12 lines, want 12", len(clusters))
+	}
+	if c := Dense(10, 12); bytes.Equal(a, c) {
+		t.Error("the same bytes for another seed")
+	}
 }
 
 func TestEachGeneratorGivesTheSameBytesForTheSameSeedAndOtherBytesForAnotherSeed(t *testing.T) {

@@ -73,8 +73,8 @@ first needs it, and the task that measures it replaces the value.
 | Value | First needed in | Measured by |
 |---|---|---|
 | The summary's size budget (7.5) | B2a | C, on the first runs with a model |
-| The size cap and the time limit of an answer (7.6) | B2b | B2b's size measurement |
-| The total size limit of kept databases (7.4) | B1 | B2a's measurement and B2b's size measurement (the design: "set after A6"). B2a measured 215.6 MiB for a 65.4 MiB log of 655,146 lines (3.3 times), see `docs/acceptance/b2a-patterns.md` |
+| The size cap and the time limit of an answer (7.6) | B2b | B2b's size measurement. Provisional values kept: 100 rows, 64 KiB, 5 s. Measured 2026-11-17 on the full OpenSSH log: question 5 in 3.5 s, the slowest answer 3.9 s, on a contended machine; whether to raise the time limit is the owner's (`TODO.md`, `docs/acceptance/b2b-questions.md`) |
+| The total size limit of kept databases (7.4) | B1 | B2a's measurement and B2b's size measurement (the design: "set after A6"). B2b measured 234.7 MiB for the full OpenSSH log of 70.0 MiB (3.35 times), peak memory 25.8 to 28.4 MiB. B2a measured 215.6 MiB for a 65.4 MiB log of 655,146 lines (3.3 times), see `docs/acceptance/b2a-patterns.md` |
 | The three limits of the investigation: tool calls, time, bytes sent (7.7) | C | C's first runs ("set after the first measurement") |
 | The cap on the number of patterns (7.3) | B2a | B2a, on the test logs. Measured 2026-11-17 (`docs/acceptance/b2a-patterns.md`): 6 patterns on a generated ssh log of 655,146 lines, 24 on the 2,000-line sshd sample; the cap stays 1,000, a ceiling these logs do not reach |
 | The default bound of a live Windows read is not one of these: the design fixes seven days (7.1) | F | |

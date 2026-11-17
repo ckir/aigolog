@@ -601,7 +601,7 @@ func laterLayout(t *testing.T, dir string, created time.Time, userVersion int, m
 		fmt.Sprintf(`PRAGMA user_version = %d`, userVersion),
 		`CREATE TABLE `+metaName+` (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID`,
 		`INSERT INTO `+metaName+` VALUES ('version', 'later')`,
-		`INSERT INTO `+metaName+` VALUES ('schema', '3')`,
+		`INSERT INTO `+metaName+` VALUES ('schema', '4')`,
 		`INSERT INTO `+metaName+` VALUES ('complete', '1')`)
 }
 
@@ -639,8 +639,8 @@ func TestAListedDatabaseOfLayoutOneIsShownAsOtherAndAgedOut(t *testing.T) {
 
 func TestADatabaseWhoseMetaTableWasRenamedIsOtherNotRemoved(t *testing.T) {
 	dir := t.TempDir()
-	recent := laterLayout(t, dir, now.Add(-time.Hour), 3, "meta2")
-	old := laterLayout(t, dir, now.Add(-10*24*time.Hour), 3, "meta2")
+	recent := laterLayout(t, dir, now.Add(-time.Hour), 4, "meta2")
+	old := laterLayout(t, dir, now.Add(-10*24*time.Hour), 4, "meta2")
 	infos, err := List(dir)
 	if err != nil || len(infos) != 2 {
 		t.Fatalf("List = %+v, %v", infos, err)
@@ -661,7 +661,7 @@ func TestADatabaseWhoseMetaTableWasRenamedIsOtherNotRemoved(t *testing.T) {
 	if !exists(recent) || exists(old) || len(res.Removed) != 1 || res.Removed[0].Path != old {
 		t.Errorf("recent exists %v, old exists %v, result %+v; want only the old one removed by age", exists(recent), exists(old), res)
 	}
-	old = laterLayout(t, dir, now.Add(-10*24*time.Hour), 3, "meta2")
+	old = laterLayout(t, dir, now.Add(-10*24*time.Hour), 4, "meta2")
 	if _, err := Sweep(dir, Policy{All: true, Now: now}); err != nil || exists(recent) || exists(old) {
 		t.Errorf("All: %v, recent exists %v, old exists %v; want both gone", err, exists(recent), exists(old))
 	}
@@ -669,7 +669,7 @@ func TestADatabaseWhoseMetaTableWasRenamedIsOtherNotRemoved(t *testing.T) {
 
 func TestADatabaseOfALaterLayoutShowsItsVersionWhenMetaIsStillThere(t *testing.T) {
 	dir := t.TempDir()
-	laterLayout(t, dir, now.Add(-time.Hour), 3, "meta")
+	laterLayout(t, dir, now.Add(-time.Hour), 4, "meta")
 	infos, err := List(dir)
 	if err != nil || len(infos) != 1 || infos[0].State != "other" || infos[0].Version != "later" {
 		t.Errorf("List = %+v, %v; want state other and version later", infos, err)
@@ -725,7 +725,7 @@ func TestOtherDatabasesCountTowardTheSizeLimit(t *testing.T) {
 	pad := func(created time.Time) string {
 		return plainDatabase(t, dir, created,
 			fmt.Sprintf(`PRAGMA application_id = %d`, applicationID),
-			`PRAGMA user_version = 3`,
+			`PRAGMA user_version = 4`,
 			`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID`,
 			`INSERT INTO meta VALUES ('complete', '1')`,
 			`CREATE TABLE pad (x BLOB)`,

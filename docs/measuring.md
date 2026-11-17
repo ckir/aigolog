@@ -27,16 +27,20 @@ Without `-bin`, `measure` builds `./cmd/aigolog` with `go build` into the tempor
 ```sh
 just measure                                  # the size of the full OpenSSH log (655,146 lines), two runs
 just measure -kind web -lines 100000 -runs 3  # another kind, size and number of runs
+just measure -kind dense -lines 300 -runs 2   # the number-dense log: 300 clusters of 256 tokens
 just measure-smoke                            # 20,000 lines, one run: only to see that it works
 go run ./cmd/measure -json                    # the figures as one JSON document
 go run ./cmd/measure -bars                    # also run a smaller size and decide the four bars
+go run ./cmd/measure -log PATH                # measure a log file of your own, see below
 ```
+
+`measure` writes its temporary folder under `TMPDIR` (`os.MkdirTemp`). Where `/tmp` is held in RAM (a `tmpfs`), set `TMPDIR` to a folder on a disk, or the log and the database count against the memory of the machine.
 
 The flags:
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `-kind ssh\|restart\|web` | `ssh` | the kind of generated log |
+| `-kind ssh\|restart\|web\|dense` | `ssh` | the kind of generated log; `dense` is lines of 256 tokens that hold 30 to 42 integers each, the shape that made the miner use most memory and the database largest |
 | `-lines N` | 655146 | the number of lines of the log |
 | `-seed N` | 1 | the seed; the same seed gives the same log |
 | `-runs N` | 2 | how many times the log is analyzed |
@@ -45,8 +49,23 @@ The flags:
 | `-json` | off | print one JSON document instead of text |
 | `-bars` | off | also run `-small-lines` lines and decide the four bars |
 | `-small-lines N` | 100000 | the smaller size, used with `-bars` |
+| `-log PATH` | none | measure `aigolog analyze` on this file instead of a generated log; with it `-kind`, `-lines`, `-seed`, `-bars` and `-small-lines` are a usage error (exit 2), and the number of lines is counted from the file |
 
 Exit codes: 0 when it measured (whether or not the bars are met), 1 when a run failed or the program could not be made (the message says which run), 2 when the command line was wrong.
+
+## The whole OpenSSH log
+
+The generated logs stand in for the real thing. To measure the real one:
+
+```sh
+just fetch-openssh-full   # downloads it once into testdata/fetched/SSH_full.log
+just measure-full         # measure -log testdata/fetched/SSH_full.log, two runs; more flags may follow
+```
+
+- `just fetch-openssh-full` downloads the log from Zenodo (an archive of about 4.4 MiB, 655,146 lines and about 70 MiB unpacked) and checks it against checksums that are fixed in `scripts/ci/fetch-openssh-full.sh`. It extracts only the one file it expects, and a file that is already there with the right checksum is left alone. The log is fetched, never committed: LogHub's terms do not allow it in this repository, and `testdata/fetched/` is git-ignored.
+- `just measure-full` runs `measure -log` on that file. `measure` reads the file where it is and does not copy it, so the "log size" figure is the size of that file; the report says `log: <path>, <N> lines`. `-runs`, `-bin`, `-keep` and `-json` work as for a generated log. Each run analyzes the whole file (about 70 seconds each on the machine of the acceptance record, `docs/acceptance/b2b-questions.md`, which was not idle; yours will differ).
+- A result is quoted as described in [How to quote a result](#how-to-quote-a-result): the range of two runs, the machine facts, and the sentence that the load was not controlled.
+- The time of a question comes from the program, not from `measure`: keep the database (`aigolog analyze` without `--no-keep`), then ask on it with `aigolog query`, which prints `answered in N ms` for a stored answer.
 
 ## How to read each figure
 
@@ -54,7 +73,7 @@ Exit codes: 0 when it measured (whether or not the bars are met), 1 when a run f
 - **cpu time (user and system)**: seconds of processor time the program used. It can be more than the wall time when the program uses more than one core.
 - **peak memory**: the most memory the program held in RAM at any moment (on Linux the peak resident set size; on Windows the peak working set). If the system gives no figure the report says `peak memory: not measured on this system` and the JSON has `null`. A missing figure is never shown as 0.
   `measure` does not let its own memory into this figure: Linux gives a child at least the high-water mark of the process that started it, so `measure` frees the log before each run and resets that mark; if the reset cannot be done or checked, the peak is `not measured`. A program whose true peak is below the few MiB `measure` itself holds shows that size.
-- **log size**: bytes of the generated log.
+- **log size**: bytes of the log (the generated one, or the file given with `-log`).
 - **database size**: bytes of the `.db` file the run made.
 - **records**: how many records the database holds.
 - **patterns**: how many patterns the miner made (the catch-all is not one).
@@ -68,7 +87,7 @@ With two runs or more each figure is a range, `low to high`. With one run it is 
 - Quote the range of two or more runs, never a single run.
 - Quote the machine facts the report prints: operating system and architecture, Go version, number of CPUs, program version.
 - Say that the background load of the machine was not controlled, and quote the load averages if the report has them.
-- Say which kind, lines and seed you used.
+- Say which kind, lines and seed you used, or, for `-log`, which file (and its SHA-256).
 - Do not compare figures from different machines as if they measured the same thing.
 
 ## The bars of the acceptance record (A6) and the rule

@@ -61,8 +61,9 @@ var ipv6Cases = []maskCase{
 	{"::ffff:1.2.3.4", "::ffff:<ip4>", []Value{{IPv4, "1.2.3.4"}}},
 	{"a:b:c:d:e:f:1:2:3", "a:b:c:d:e:f:<int>:<int>:<int>", []Value{{Int, "1"}, {Int, "2"}, {Int, "3"}}},
 	{"deadbeef::1", "deadbeef::<int>", []Value{{Int, "1"}}},
-	{"1:2:3:4:5:6:7:8:9::", "<int>:<int>:<int>:<int>:<int>:<int>:<int>:<int>:<int>::",
-		[]Value{{Int, "1"}, {Int, "2"}, {Int, "3"}, {Int, "4"}, {Int, "5"}, {Int, "6"}, {Int, "7"}, {Int, "8"}, {Int, "9"}}},
+	// Nine integers: the cap of MaxTokenValues leaves the ninth as text.
+	{"1:2:3:4:5:6:7:8:9::", "<int>:<int>:<int>:<int>:<int>:<int>:<int>:<int>:9::",
+		[]Value{{Int, "1"}, {Int, "2"}, {Int, "3"}, {Int, "4"}, {Int, "5"}, {Int, "6"}, {Int, "7"}, {Int, "8"}}},
 }
 
 func TestScanMasksTypedValues(t *testing.T) {
@@ -273,8 +274,10 @@ func refCut(s string, room int) int {
 }
 
 // refMask masks one token by the rules, including the rule that masking
-// stops at the first marker that does not fit in MaxTokenTextBytes.
-func refMask(raw string) (string, []Value) {
+// stops at the first marker that does not fit in MaxTokenTextBytes and the
+// rule that it stops once the token holds MaxTokenValues values or left values
+// are taken (left is what the message has not yet used of MaxMessageValues).
+func refMask(raw string, left int) (string, []Value) {
 	var text strings.Builder
 	var vals []Value
 	copied := 0
@@ -286,7 +289,7 @@ func refMask(raw string) (string, []Value) {
 		if n == 0 {
 			continue
 		}
-		if text.Len()+(i-copied)+len(typ.Marker()) > MaxTokenTextBytes {
+		if len(vals) >= MaxTokenValues || len(vals) >= left || text.Len()+(i-copied)+len(typ.Marker()) > MaxTokenTextBytes {
 			break
 		}
 		text.WriteString(raw[copied:i])
@@ -301,7 +304,7 @@ func refMask(raw string) (string, []Value) {
 
 func TestTheReferenceMaskerAgreesWithTheOracleTable(t *testing.T) {
 	for _, c := range append(append([]maskCase{}, oracleCases...), ipv6Cases...) {
-		text, vals := refMask(c.in)
+		text, vals := refMask(c.in, MaxMessageValues)
 		if text != c.text || len(vals) != len(c.want) || (len(vals) > 0 && !reflect.DeepEqual(vals, c.want)) {
 			t.Errorf("reference of %q = %q %v, table says %q %v", c.in, text, vals, c.text, c.want)
 		}
@@ -357,6 +360,7 @@ func TestScanNeverPanicsAndKeepsRawTokens(t *testing.T) {
 		if len(toks) > MaxTokens {
 			t.Fatalf("input %q gave %d tokens", in, len(toks))
 		}
+		left := MaxMessageValues
 		for _, tok := range toks {
 			if tok.Raw == "" || !strings.Contains(in, tok.Raw) {
 				t.Fatalf("Raw %q is not a substring of %q", tok.Raw, in)
@@ -365,11 +369,56 @@ func TestScanNeverPanicsAndKeepsRawTokens(t *testing.T) {
 				t.Fatalf("Raw %q holds white space", tok.Raw)
 			}
 			checkBounds(t, tok.Raw, tok)
-			wantText, wantVals := refMask(tok.Raw)
+			wantText, wantVals := refMask(tok.Raw, left)
+			left -= len(wantVals)
 			if tok.Text != wantText || len(tok.Values) != len(wantVals) || (len(wantVals) > 0 && !reflect.DeepEqual(tok.Values, wantVals)) {
 				t.Fatalf("Scan of %q = %q %v, reference says %q %v", tok.Raw, tok.Text, tok.Values, wantText, wantVals)
 			}
 		}
+	}
+}
+
+func TestScanKeepsAtMostEightValuesInATokenAndCopiesTheRestAsText(t *testing.T) {
+	toks := Scan("1,2,3,4,5,6,7,8,9,10")
+	if len(toks) != 1 {
+		t.Fatalf("got %d tokens, want 1", len(toks))
+	}
+	tok := toks[0]
+	if len(tok.Values) != MaxTokenValues || MaxTokenValues != 8 {
+		t.Errorf("%d values (MaxTokenValues = %d), want 8", len(tok.Values), MaxTokenValues)
+	}
+	if want := "<int>,<int>,<int>,<int>,<int>,<int>,<int>,<int>,9,10"; tok.Text != want {
+		t.Errorf("Text = %q, want %q", tok.Text, want)
+	}
+	if tok.Raw != "1,2,3,4,5,6,7,8,9,10" {
+		t.Errorf("Raw = %q, want it unchanged", tok.Raw)
+	}
+}
+
+func TestScanKeepsAtMostSixtyFourValuesInAMessage(t *testing.T) {
+	if MaxMessageValues != 64 {
+		t.Fatalf("MaxMessageValues = %d, want 64", MaxMessageValues)
+	}
+	msg := strings.TrimSpace(strings.Repeat("1,2,3,4,5,6,7,8 ", 10))
+	toks := Scan(msg)
+	if len(toks) != 10 {
+		t.Fatalf("got %d tokens, want 10", len(toks))
+	}
+	total := 0
+	for i, tok := range toks {
+		total += len(tok.Values)
+		if i < 8 {
+			if len(tok.Values) != 8 {
+				t.Errorf("token %d holds %d values, want 8", i+1, len(tok.Values))
+			}
+			continue
+		}
+		if len(tok.Values) != 0 || tok.Text != tok.Raw {
+			t.Errorf("token %d holds %d values and Text %q, want none and %q", i+1, len(tok.Values), tok.Text, tok.Raw)
+		}
+	}
+	if total != MaxMessageValues {
+		t.Errorf("the message holds %d values, want %d", total, MaxMessageValues)
 	}
 }
 

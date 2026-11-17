@@ -80,6 +80,10 @@ func RunEnv(env Env, args []string) int {
 		return list(env, args[1:])
 	case "clean":
 		return clean(env, args[1:])
+	case "query":
+		return queryCommand(env, args[1:])
+	case "show":
+		return show(env, args[1:])
 	case "version":
 		ok := say(stdout, "aigolog %s\n", buildinfo.Version)
 		ok = say(stdout, "go %s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH) && ok
