@@ -190,7 +190,14 @@ func TestNoKeepSaysRemovedWhenOnlyTheLockFileStays(t *testing.T) {
 
 func TestNoKeepSaysKeptWhenTheDatabaseFileStays(t *testing.T) {
 	h := newHarness(t)
-	removeRunWas(t, func(db *store.DB) error { return errors.New("access denied") })
+	removeRunWas(t, func(db *store.DB) error {
+		// The real Remove closes the connection and the lock before it
+		// deletes anything; a file that stays open cannot be cleaned up on Windows.
+		if err := db.Close(); err != nil {
+			return err
+		}
+		return errors.New("access denied")
+	})
 	code, out, errOut := h.run("analyze", "--no-keep", h.file("a.log", "x\n"))
 	if code != exitcode.OK || !strings.Contains(errOut, "warning: could not remove the database: access denied") {
 		t.Errorf("exit code %d, stderr %q", code, errOut)
@@ -1081,7 +1088,14 @@ func TestAFailureToBuildTheSummaryReportsAFailureToRemoveTheDatabaseAsNoKeepDoes
 	buildSummaryWas(t, func(context.Context, *store.DB, summary.Options) (summary.Summary, summary.Digest, error) {
 		return summary.Summary{}, summary.Digest{}, errors.New("boom")
 	})
-	removeRunWas(t, func(db *store.DB) error { return errors.New("access denied") })
+	removeRunWas(t, func(db *store.DB) error {
+		// The real Remove closes the connection and the lock before it
+		// deletes anything; a file that stays open cannot be cleaned up on Windows.
+		if err := db.Close(); err != nil {
+			return err
+		}
+		return errors.New("access denied")
+	})
 	code, out, errOut := h.run("analyze", h.file("a.log", reportLog(5)))
 	want := "aigolog: the report could not be built: boom\naigolog: warning: could not remove the database: access denied\n"
 	if code != exitcode.StorageUnavailable || out != "" || errOut != want {
