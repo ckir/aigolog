@@ -144,7 +144,8 @@ func (l Layout) Parse(line string) (record.Stamp, bool) {
 	if limit := len(l.goLayout) + maxSlack; len(line) > limit {
 		line = line[:limit]
 	}
-	text := line[skipPrefix(line):]
+	prefix := skipPrefix(line)
+	text := line[prefix:]
 
 	// time.Parse takes the whole text, so it reports what is left over after
 	// the longest stamp it can read, and that gives the longest prefix.
@@ -160,6 +161,9 @@ func (l Layout) Parse(line string) (record.Stamp, bool) {
 	if err != nil {
 		return record.Stamp{}, false
 	}
+	// The stamp covers the prefix and the matched text. line was cut at its
+	// end only, so this is an offset from the start of the line.
+	covered := prefix + len(text)
 
 	switch {
 	case l.YearPending:
@@ -168,19 +172,20 @@ func (l Layout) Parse(line string) (record.Stamp, bool) {
 			Month:     int(t.Month()),
 			Day:       t.Day(),
 			NanoOfDay: int64(time.Duration(t.Hour())*time.Hour + time.Duration(t.Minute())*time.Minute + time.Duration(t.Second())*time.Second + time.Duration(t.Nanosecond())),
+			Len:       covered,
 		}, true
 	case l.zone != zoneNone:
 		n, ok := nanosOf(t)
 		if !ok {
 			return record.Stamp{}, false
 		}
-		return record.Stamp{State: record.Resolved, Nanos: n, Exact: true, Zone: zoneText(text, l.zone)}, true
+		return record.Stamp{State: record.Resolved, Nanos: n, Exact: true, Zone: zoneText(text, l.zone), Len: covered}, true
 	}
 	n, ok := nanosOf(wallTime(t))
 	if !ok {
 		return record.Stamp{}, false
 	}
-	return record.Stamp{State: record.Resolved, Nanos: n}, true
+	return record.Stamp{State: record.Resolved, Nanos: n, Len: covered}, true
 }
 
 // zoneText returns the zone as written at the end of the matched text.

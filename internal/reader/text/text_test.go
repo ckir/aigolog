@@ -629,3 +629,43 @@ func TestASurrogatePairSplitAcrossTheDecodersChunkIsKept(t *testing.T) {
 		}
 	}
 }
+
+func TestAStampedRecordCarriesTheLengthOfItsStamp(t *testing.T) {
+	_, recs := readAll(t, []byte("2026-11-16 08:15:22 hello\n  more\n"))
+	if len(recs) != 1 {
+		t.Fatalf("got %d records: %q", len(recs), raws(recs))
+	}
+	if got := recs[0].Stamp.Len; got != 19 {
+		t.Errorf("Stamp.Len = %d, want 19", got)
+	}
+	if got, want := recs[0].Raw[recs[0].Stamp.Len:], " hello\n  more"; got != want {
+		t.Errorf("Raw[Stamp.Len:] = %q, want %q", got, want)
+	}
+}
+
+func TestARecordWithNoStampHasLengthZero(t *testing.T) {
+	_, recs := readAll(t, []byte("plain one\nplain two\n"))
+	if len(recs) != 2 {
+		t.Fatalf("got %d records: %q", len(recs), raws(recs))
+	}
+	for i, rec := range recs {
+		if rec.Stamp.Len != 0 {
+			t.Errorf("record %d: Stamp.Len = %d, want 0", i+1, rec.Stamp.Len)
+		}
+	}
+	// A record that the cap cut has no stamp, so its length is 0; the record
+	// before it keeps its own.
+	input := "2026-11-16 08:15:22 start\n" + strings.Join(indented(10), "\n") + "\n"
+	r, recs := readAllCapped(t, input, smallCap)
+	if r.Cut() == 0 || len(recs) < 2 {
+		t.Fatalf("the cap cut nothing: Cut() = %d, %d records", r.Cut(), len(recs))
+	}
+	if recs[0].Stamp.Len != 19 {
+		t.Errorf("first record: Stamp.Len = %d, want 19", recs[0].Stamp.Len)
+	}
+	for i, rec := range recs[1:] {
+		if rec.Stamp.Len != 0 {
+			t.Errorf("cut record %d: Stamp.Len = %d, want 0", i+2, rec.Stamp.Len)
+		}
+	}
+}

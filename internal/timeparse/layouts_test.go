@@ -48,18 +48,18 @@ func TestParseReadsEveryLayout(t *testing.T) {
 		line   string
 		want   record.Stamp
 	}{
-		{"rfc3339", "2026-01-05T10:00:01+02:00 sshd: x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 8, 0, 1), Exact: true, Zone: "+02:00"}},
-		{"rfc3339", "2026-01-05T10:00:01.123Z sshd: x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 10, 0, 1) + 123e6, Exact: true, Zone: "Z"}},
-		{"iso-space-offset", "2026-01-05 10:00:01+02:00 x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 8, 0, 1), Exact: true, Zone: "+02:00"}},
-		{"iso-space-offset-sp", "2026-01-05 10:00:01 -0700 x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 17, 0, 1), Exact: true, Zone: "-0700"}},
-		{"clf", `05/Jan/2026:10:00:01 +0200 "GET /"`, record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 8, 0, 1), Exact: true, Zone: "+0200"}},
-		{"iso-t", "2026-01-05T10:00:01 x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 10, 0, 1)}},
-		{"iso-space", "2026-01-05 10:00:01,250 x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 10, 0, 1) + 250e6}},
-		{"slash", "2026/01/05 10:00:01 x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 10, 0, 1)}},
-		{"ctime", "Mon Jan  5 10:00:01 2026 x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 10, 0, 1)}},
-		{"syslog", "Jan  5 10:00:01 host sshd[1]: x", record.Stamp{State: record.YearPending, Month: 1, Day: 5, NanoOfDay: int64(10*time.Hour + time.Second)}},
-		{"syslog", "Jan 15 10:00:01 host x", record.Stamp{State: record.YearPending, Month: 1, Day: 15, NanoOfDay: int64(10*time.Hour + time.Second)}},
-		{"syslog", "Feb 29 10:00:00 host x", record.Stamp{State: record.YearPending, Month: 2, Day: 29, NanoOfDay: int64(10 * time.Hour)}},
+		{"rfc3339", "2026-01-05T10:00:01+02:00 sshd: x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 8, 0, 1), Exact: true, Zone: "+02:00", Len: 25}},
+		{"rfc3339", "2026-01-05T10:00:01.123Z sshd: x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 10, 0, 1) + 123e6, Exact: true, Zone: "Z", Len: 24}},
+		{"iso-space-offset", "2026-01-05 10:00:01+02:00 x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 8, 0, 1), Exact: true, Zone: "+02:00", Len: 25}},
+		{"iso-space-offset-sp", "2026-01-05 10:00:01 -0700 x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 17, 0, 1), Exact: true, Zone: "-0700", Len: 25}},
+		{"clf", `05/Jan/2026:10:00:01 +0200 "GET /"`, record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 8, 0, 1), Exact: true, Zone: "+0200", Len: 26}},
+		{"iso-t", "2026-01-05T10:00:01 x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 10, 0, 1), Len: 19}},
+		{"iso-space", "2026-01-05 10:00:01,250 x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 10, 0, 1) + 250e6, Len: 23}},
+		{"slash", "2026/01/05 10:00:01 x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 10, 0, 1), Len: 19}},
+		{"ctime", "Mon Jan  5 10:00:01 2026 x", record.Stamp{State: record.Resolved, Nanos: wall(2026, 1, 5, 10, 0, 1), Len: 24}},
+		{"syslog", "Jan  5 10:00:01 host sshd[1]: x", record.Stamp{State: record.YearPending, Month: 1, Day: 5, NanoOfDay: int64(10*time.Hour + time.Second), Len: 15}},
+		{"syslog", "Jan 15 10:00:01 host x", record.Stamp{State: record.YearPending, Month: 1, Day: 15, NanoOfDay: int64(10*time.Hour + time.Second), Len: 15}},
+		{"syslog", "Feb 29 10:00:00 host x", record.Stamp{State: record.YearPending, Month: 2, Day: 29, NanoOfDay: int64(10 * time.Hour), Len: 15}},
 	}
 	for _, c := range cases {
 		got, ok := layoutNamed(t, c.layout).Parse(c.line)
@@ -203,7 +203,7 @@ func TestParseAcceptsTheEdgesOfTheInt64NanosecondRange(t *testing.T) {
 		got, ok := iso.Parse(line)
 		want := record.Stamp{}
 		if c.ok {
-			want = record.Stamp{State: record.Resolved, Nanos: c.want}
+			want = record.Stamp{State: record.Resolved, Nanos: c.want, Len: len(line)}
 		}
 		if ok != c.ok || got != want {
 			t.Errorf("Parse(%q) (second %d) = %+v, %v; want %+v, %v", line, c.sec, got, ok, want, c.ok)
@@ -212,7 +212,7 @@ func TestParseAcceptsTheEdgesOfTheInt64NanosecondRange(t *testing.T) {
 		got, ok = layoutNamed(t, "rfc3339").Parse(zoned)
 		want = record.Stamp{}
 		if c.ok {
-			want = record.Stamp{State: record.Resolved, Nanos: c.want, Exact: true, Zone: "Z"}
+			want = record.Stamp{State: record.Resolved, Nanos: c.want, Exact: true, Zone: "Z", Len: len(zoned)}
 		}
 		if ok != c.ok || got != want {
 			t.Errorf("rfc3339: Parse(%q) (second %d) = %+v, %v; want %+v, %v", zoned, c.sec, got, ok, want, c.ok)
@@ -229,7 +229,7 @@ func TestParseAcceptsTheEdgesOfTheInt64NanosecondRange(t *testing.T) {
 }
 
 func TestParseStillAcceptsAStampWithNoYear(t *testing.T) {
-	want := record.Stamp{State: record.YearPending, Month: 12, Day: 31, NanoOfDay: int64(23*time.Hour + 59*time.Minute + 59*time.Second)}
+	want := record.Stamp{State: record.YearPending, Month: 12, Day: 31, NanoOfDay: int64(23*time.Hour + 59*time.Minute + 59*time.Second), Len: 15}
 	if got, ok := layoutNamed(t, "syslog").Parse("Dec 31 23:59:59 host x"); !ok || got != want {
 		t.Errorf("Parse = %+v, %v; want %+v, true", got, ok, want)
 	}
@@ -268,5 +268,66 @@ func TestWallNanosReportsAYearOutOfRange(t *testing.T) {
 	got, ok := WallNanos(time.Date(2026, 11, 16, 8, 15, 22, 5, time.FixedZone("x", 2*3600)))
 	if want := time.Date(2026, 11, 16, 8, 15, 22, 5, time.UTC).UnixNano(); !ok || got != want {
 		t.Errorf("WallNanos(2026) = %d, %v; want %d, true", got, ok, want)
+	}
+}
+
+func TestEveryLayoutSetsTheStampLength(t *testing.T) {
+	samples := map[string]string{
+		"rfc3339":                "2026-11-16T08:15:22Z",
+		"iso-space-offset":       "2026-11-16 08:15:22+02:00",
+		"iso-space-offset-sp":    "2026-11-16 08:15:22 +0200",
+		"iso-t-offset-plain":     "2026-11-16T08:15:22+0200",
+		"iso-space-offset-plain": "2026-11-16 08:15:22+0200",
+		"clf":                    "16/Nov/2026:08:15:22 +0200",
+		"iso-t":                  "2026-11-16T08:15:22",
+		"iso-space":              "2026-11-16 08:15:22",
+		"slash":                  "2026/11/16 08:15:22",
+		"ctime":                  "Mon Nov 16 08:15:22 2026",
+		"syslog":                 "Nov 16 08:15:22",
+	}
+	const rest = " host sshd[1]: x"
+	for _, l := range Layouts {
+		stamp, ok := samples[l.Name]
+		if !ok {
+			t.Errorf("layout %q has no sample stamp in this test", l.Name)
+			continue
+		}
+		got, parsed := l.Parse(stamp + rest)
+		if !parsed || got.Len != len(stamp) {
+			t.Errorf("%s: Parse(%q) = Len %d, %v; want Len %d, true", l.Name, stamp+rest, got.Len, parsed, len(stamp))
+		}
+	}
+}
+
+func TestTheStampLengthCoversThePrefixAndTheStampOnly(t *testing.T) {
+	cases := []struct {
+		layout  string
+		line    string
+		wantLen int
+	}{
+		{"syslog", "<34>Nov 16 08:15:22 host sshd[1]: x", 4 + len("Nov 16 08:15:22")},
+		{"iso-space", "[2026-11-16 08:15:22] x", 1 + len("2026-11-16 08:15:22")},
+		{"iso-space", "<34>[2026-11-16 08:15:22] x", 5 + len("2026-11-16 08:15:22")},
+		{"syslog", "<34>[Nov 16 08:15:22] host x", 5 + len("Nov 16 08:15:22")},
+		{"syslog", "Nov  5 08:15:22 host sshd[1]: x", len("Nov  5 08:15:22")},
+		{"syslog", "<13>Nov  5 08:15:22 host x", 4 + len("Nov  5 08:15:22")},
+		{"iso-space", "2026-11-16 08:15:22.123456 x", len("2026-11-16 08:15:22.123456")},
+		{"iso-space", "2026-11-16 08:15:22,250 x", len("2026-11-16 08:15:22,250")},
+		{"rfc3339", "2026-11-16T08:15:22.5+02:00 x", len("2026-11-16T08:15:22.5+02:00")},
+		{"iso-space", "2026-11-16 08:15:22", len("2026-11-16 08:15:22")},
+	}
+	for _, c := range cases {
+		got, ok := layoutNamed(t, c.layout).Parse(c.line)
+		if !ok || got.Len != c.wantLen {
+			t.Errorf("%s: Parse(%q) = Len %d, %v; want Len %d, true", c.layout, c.line, got.Len, ok, c.wantLen)
+		}
+	}
+}
+
+func TestALineWithNoStampHasNoLength(t *testing.T) {
+	for _, l := range Layouts {
+		if got, ok := l.Parse("hello world, no stamp here"); ok || got.Len != 0 {
+			t.Errorf("%s: Parse of a line with no stamp = %+v, %v; want a zero Stamp and false", l.Name, got, ok)
+		}
 	}
 }
