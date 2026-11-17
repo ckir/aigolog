@@ -140,10 +140,15 @@ func Create(ctx context.Context, opt Options) (*DB, error) {
 	return nil, fmt.Errorf("making a database in %s: no free name after %d tries", opt.Dir, maxTries)
 }
 
+// afterLockHook, when not nil, is called by tryCreate right after it holds the
+// lock of the lock file it made and before it checks that the file is still
+// the one on disk. A test sets it to act as a cleaner does.
+var afterLockHook func(lockPath string)
+
 // tryCreate makes the database with one new name. It is retry when the name
 // cannot be used (it exists, or another process has its lock).
 func tryCreate(ctx context.Context, dir string, created time.Time) (d *DB, retry bool, err error) {
-	random, err := randomPart()
+	random, err := randomPartFunc()
 	if err != nil {
 		return nil, false, fmt.Errorf("making the name of a database: %w", err)
 	}
@@ -170,6 +175,9 @@ func tryCreate(ctx context.Context, dir string, created time.Time) (d *DB, retry
 		return nil, true, nil
 	}
 	d.lock = f
+	if afterLockHook != nil {
+		afterLockHook(d.lockPath)
+	}
 	// A cleaner may have removed the file between its creation and its lock.
 	onDisk, err := os.Stat(d.lockPath)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {

@@ -539,3 +539,143 @@ func TestCreateWritesTheMetaRows(t *testing.T) {
 	want["complete"] = "1"
 	check("after MarkComplete", want)
 }
+
+// useRandomParts makes randomPartFunc return the given random parts in turn, and fail
+// when they are used up; it restores the real function when the test ends.
+func useRandomParts(t *testing.T, parts ...string) {
+	t.Helper()
+	next := 0
+	randomPartFunc = func() (string, error) {
+		if next >= len(parts) {
+			return "", errors.New("the test has no more random parts")
+		}
+		next++
+		return parts[next-1], nil
+	}
+	t.Cleanup(func() { randomPartFunc = randomPart })
+}
+
+// readFile returns the content of path, or fails the test.
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestCreateRetriesWhenTheLockFileNameIsTaken(t *testing.T) {
+	useRandomParts(t, "00000001", "00000002", "00000003")
+	dir := t.TempDir()
+	created := time.Date(2026, 1, 16, 10, 15, 0, 0, time.UTC)
+	taken := filepath.Join(dir, DatabaseName(created, "00000001"))
+	takenLock := lockOf(taken)
+	if err := os.WriteFile(takenLock, []byte("theirs"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, err := Create(ctx, Options{Dir: dir, Now: fixed(created)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if want := filepath.Join(dir, DatabaseName(created, "00000002")); d.Path() != want {
+		t.Errorf("the database is %s, want %s", d.Path(), want)
+	}
+	if got := readFile(t, takenLock); got != "theirs" {
+		t.Errorf("the lock file that was taken holds %q, want it untouched", got)
+	}
+	if exists(taken) {
+		t.Error("a database was made under the name whose lock file was taken")
+	}
+}
+
+func TestCreateRetriesWhenTheDatabaseFileNameIsTaken(t *testing.T) {
+	useRandomParts(t, "00000001", "00000002", "00000003")
+	dir := t.TempDir()
+	created := time.Date(2026, 1, 16, 10, 15, 0, 0, time.UTC)
+	taken := filepath.Join(dir, DatabaseName(created, "00000001"))
+	if err := os.WriteFile(taken, []byte("theirs"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, err := Create(ctx, Options{Dir: dir, Now: fixed(created)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if want := filepath.Join(dir, DatabaseName(created, "00000002")); d.Path() != want {
+		t.Errorf("the database is %s, want %s", d.Path(), want)
+	}
+	if got := readFile(t, taken); got != "theirs" {
+		t.Errorf("the database file that was taken holds %q, want it untouched", got)
+	}
+	if exists(lockOf(taken)) {
+		t.Error("the lock file of the first name was left behind")
+	}
+}
+
+// cleanerActsOnce sets afterLockHook to a function that, the first time it is
+// called, removes the lock file (and, if replace, puts another file in its
+// place), as a cleaner does between the creation of the file and its check; it
+// skips the test where the system does not let a file that is open be deleted.
+func cleanerActsOnce(t *testing.T, replace bool) {
+	t.Helper()
+	done := false
+	afterLockHook = func(lockPath string) {
+		if done {
+			return
+		}
+		done = true
+		if err := os.Remove(lockPath); err != nil {
+			t.Skipf("this system does not delete a file that is open: %v", err)
+		}
+		if replace {
+			if err := os.WriteFile(lockPath, []byte("theirs"), 0o600); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	t.Cleanup(func() { afterLockHook = nil })
+}
+
+func TestCreateRetriesWhenACleanerRemovesTheLockFileBeforeItIsChecked(t *testing.T) {
+	useRandomParts(t, "00000001", "00000002", "00000003")
+	cleanerActsOnce(t, false)
+	dir := t.TempDir()
+	created := time.Date(2026, 1, 16, 10, 15, 0, 0, time.UTC)
+	first := filepath.Join(dir, DatabaseName(created, "00000001"))
+	d, err := Create(ctx, Options{Dir: dir, Now: fixed(created)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if want := filepath.Join(dir, DatabaseName(created, "00000002")); d.Path() != want {
+		t.Errorf("the database is %s, want %s", d.Path(), want)
+	}
+	if exists(first) || exists(lockOf(first)) {
+		t.Errorf("the first name left something behind: db %v, lock %v", exists(first), exists(lockOf(first)))
+	}
+}
+
+func TestCreateRetriesWhenACleanerReplacesTheLockFileBeforeItIsChecked(t *testing.T) {
+	useRandomParts(t, "00000001", "00000002", "00000003")
+	cleanerActsOnce(t, true)
+	dir := t.TempDir()
+	created := time.Date(2026, 1, 16, 10, 15, 0, 0, time.UTC)
+	first := filepath.Join(dir, DatabaseName(created, "00000001"))
+	d, err := Create(ctx, Options{Dir: dir, Now: fixed(created)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if want := filepath.Join(dir, DatabaseName(created, "00000002")); d.Path() != want {
+		t.Errorf("the database is %s, want %s", d.Path(), want)
+	}
+	if exists(first) {
+		t.Error("a database was made under the name whose lock file was replaced")
+	}
+	// The file in the place of ours is not ours to remove.
+	if got := readFile(t, lockOf(first)); got != "theirs" {
+		t.Errorf("the file that replaced the lock file holds %q, want it untouched", got)
+	}
+}

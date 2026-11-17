@@ -8,6 +8,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -411,5 +412,153 @@ func TestCleanAllRemovesAnUnsureDatabaseWhoseLockCanBeTested(t *testing.T) {
 	res, err := Sweep(dir, Policy{All: true, Now: now})
 	if err != nil || exists(path) || len(res.Removed) != 1 {
 		t.Errorf("exists %v, removed %d, err %v; want it removed by All", exists(path), len(res.Removed), err)
+	}
+}
+
+// threeDatabases makes three complete databases, the oldest first, with the
+// number of records given for each.
+func threeDatabases(t *testing.T, dir string, rows [3]int) (a, b, c string) {
+	t.Helper()
+	a = made(t, dir, now.Add(-3*time.Hour), true, rows[0])
+	b = made(t, dir, now.Add(-2*time.Hour), true, rows[1])
+	c = made(t, dir, now.Add(-1*time.Hour), true, rows[2])
+	return a, b, c
+}
+
+func TestSweepDoesNotRemoveARunThatBeganBetweenTheScanAndTheSizePhase(t *testing.T) {
+	dir := t.TempDir()
+	a, b, _ := threeDatabases(t, dir, [3]int{2000, 2000, 2000})
+	fa, _ := os.Stat(a)
+	limit := fa.Size() + 1000 // room for one of the three: A and B are to go
+	var held *os.File
+	beforeSizePhase = func() {
+		beforeSizePhase = nil
+		lock, running, err := acquire(lockOf(b))
+		if err != nil || running || lock == nil {
+			t.Errorf("taking the lock of the second database: %v, running %v, lock %v", err, running, lock != nil)
+		}
+		held = lock
+	}
+	t.Cleanup(func() { beforeSizePhase = nil; release(held) })
+	res, err := Sweep(dir, Policy{MaxAge: 7 * 24 * time.Hour, MaxTotalBytes: limit, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held == nil {
+		t.Fatal("beforeSizePhase did not run")
+	}
+	// The newest (C) goes too: a running database counts toward the limit and
+	// cannot be removed, so the next one is removed instead; the test does not
+	// depend on that.
+	if exists(a) {
+		t.Error("the oldest database was not removed")
+	}
+	if !exists(b) || !exists(lockOf(b)) {
+		t.Errorf("the database that began to run was removed: db %v, lock %v", exists(b), exists(lockOf(b)))
+	}
+	var running []string
+	for _, i := range res.Running {
+		running = append(running, i.Path)
+	}
+	if len(running) != 1 || running[0] != b {
+		t.Errorf("Running = %v, want [%s]", running, b)
+	}
+	for _, i := range res.Removed {
+		if i.Path == b {
+			t.Error("the database that began to run is in Removed")
+		}
+	}
+	for _, i := range res.Kept {
+		if i.Path == b {
+			t.Error("the database that began to run is in Kept")
+		}
+	}
+}
+
+func TestSweepCountsTheSizeAtTheTimeOfTheSizePhase(t *testing.T) {
+	dir := t.TempDir()
+	a, b, c := threeDatabases(t, dir, [3]int{8000, 0, 0})
+	fa, _ := os.Stat(a)
+	fb, _ := os.Stat(b)
+	fc, _ := os.Stat(c)
+	const grown = 1 << 20
+	if fa.Size() < grown {
+		t.Fatalf("the oldest database (%d bytes) must be at least the growth (%d)", fa.Size(), grown)
+	}
+	limit := fa.Size() + fb.Size() + fc.Size() + 1000 // the sizes at the scan fit
+	beforeSizePhase = func() {
+		beforeSizePhase = nil
+		f, err := os.OpenFile(c, os.O_WRONLY|os.O_APPEND, 0)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer f.Close()
+		if _, err := f.Write(make([]byte, grown)); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { beforeSizePhase = nil })
+	res, err := Sweep(dir, Policy{MaxAge: 7 * 24 * time.Hour, MaxTotalBytes: limit, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists(a) || !exists(b) || !exists(c) {
+		t.Errorf("oldest exists %v, middle %v, newest %v; want only the oldest gone", exists(a), exists(b), exists(c))
+	}
+	for _, i := range res.Kept {
+		if i.Path == c && i.Size != fc.Size()+grown {
+			t.Errorf("the size of the newest in Kept is %d, want %d (the size at the size phase)", i.Size, fc.Size()+grown)
+		}
+	}
+}
+
+// failsFirst makes removeFile fail with "in use" for the first "fails" calls
+// and call os.Remove after that; it returns how many times it was called.
+func failsFirst(t *testing.T, fails int) *int {
+	t.Helper()
+	calls := 0
+	removeFile = func(path string) error {
+		calls++
+		if calls <= fails {
+			return errors.New("in use")
+		}
+		return os.Remove(path)
+	}
+	t.Cleanup(func() { removeFile = os.Remove })
+	return &calls
+}
+
+func TestRemoveOrphanLockClosesTheHandleAndTriesAgainWhenTheFirstDeleteFails(t *testing.T) {
+	orphan := filepath.Join(t.TempDir(), "20260101T000000Z-deadbeef.lock")
+	if err := os.WriteFile(orphan, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := failsFirst(t, 1)
+	if err := removeOrphanLock(orphan); err != nil {
+		t.Errorf("removeOrphanLock = %v, want nil", err)
+	}
+	if exists(orphan) {
+		t.Error("the orphan lock was not removed by the second delete")
+	}
+	if *calls != 2 {
+		t.Errorf("removeFile was called %d times, want 2", *calls)
+	}
+}
+
+func TestRemoveOrphanLockLeavesAFileThatCannotBeDeletedAndReportsNothing(t *testing.T) {
+	orphan := filepath.Join(t.TempDir(), "20260101T000000Z-deadbeef.lock")
+	if err := os.WriteFile(orphan, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := failsFirst(t, 2)
+	if err := removeOrphanLock(orphan); err != nil {
+		t.Errorf("removeOrphanLock = %v, want nil", err)
+	}
+	if !exists(orphan) {
+		t.Error("the orphan lock was removed although both deletes failed")
+	}
+	if *calls != 2 {
+		t.Errorf("removeFile was called %d times, want 2", *calls)
 	}
 }

@@ -32,7 +32,7 @@ const (
 type Info struct {
 	Path    string    // the .db file
 	Created time.Time // the time in the name of the file (UTC)
-	Size    int64     // the size of the .db file, in bytes
+	Size    int64     // the size of the .db file, in bytes, at the scan (Sweep reads it again for the databases it keeps, when the size limit applies)
 	// State is "complete", "incomplete" (the run did not finish), "running"
 	// (another process holds the lock of the run) or "unreadable" (the file
 	// could not be read as a database of aigolog, or its lock file could not
@@ -418,6 +418,9 @@ func Sweep(dir string, p Policy) (SweepResult, error) {
 	}
 
 	if !p.All && p.MaxTotalBytes > 0 {
+		if beforeSizePhase != nil {
+			beforeSizePhase()
+		}
 		kept = sweepSize(kept, &res, p.MaxTotalBytes, &errs)
 	}
 	res.Kept = kept
@@ -433,6 +436,10 @@ func Sweep(dir string, p Policy) (SweepResult, error) {
 	return res, errors.Join(errs...)
 }
 
+// beforeSizePhase, when not nil, is called by Sweep just before the size phase.
+// A test sets it to change the folder between the scan and that phase.
+var beforeSizePhase func()
+
 // sweepSize removes the oldest of kept, one at a time, while the .db files of
 // the running and the kept databases add up to more than limit. A kept
 // database that is unsure (it cannot be read, so the program does not know
@@ -442,6 +449,13 @@ func Sweep(dir string, p Policy) (SweepResult, error) {
 // databases that are still kept; one that has become running is moved to
 // res.Running, and one that is removed to res.Removed.
 func sweepSize(kept []Info, res *SweepResult, limit int64, errs *[]error) []Info {
+	// The scan was a while ago: a run that is still writing has grown its file
+	// since. The size at this moment is what the limit is about.
+	for n := range kept {
+		if fi, err := os.Stat(kept[n].Path); err == nil {
+			kept[n].Size = fi.Size()
+		}
+	}
 	var total int64
 	for _, i := range res.Running {
 		total += i.Size
