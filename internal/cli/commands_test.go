@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -27,6 +29,8 @@ import (
 	"github.com/ckir/aigolog/internal/exitcode"
 	"github.com/ckir/aigolog/internal/reader/text"
 	"github.com/ckir/aigolog/internal/store"
+	"github.com/ckir/aigolog/internal/summary"
+	"github.com/ckir/aigolog/internal/testlog"
 )
 
 // harness runs a command with a private cache folder and no configuration file.
@@ -648,9 +652,14 @@ func TestTheSummaryNotesRecordsCutAtOneMiBAndOnlyThen(t *testing.T) {
 			at = i
 		}
 	}
-	// The note ends the block of its source: the database line follows.
-	if at < 0 || !strings.HasPrefix(lines[at-1], "  time: ") || !strings.HasPrefix(lines[at+1], "database: ") {
-		t.Errorf("the note %q is not in place in:\n%s", note, out)
+	// The note ends the block of its source; the digest, then the summary,
+	// follow it, and the database line is the last line of the report.
+	if at < 0 || !strings.HasPrefix(lines[at-1], "  time: ") {
+		t.Fatalf("the note %q is not in place in:\n%s", note, out)
+	}
+	heading := slices.Index(lines, "patterns")
+	if heading <= at || !strings.HasPrefix(lines[len(lines)-1], "database: ") || heading >= len(lines)-1 {
+		t.Errorf("the note, then the heading patterns, then the database line last, are not in place in:\n%s", out)
 	}
 
 	h = newHarness(t)
@@ -694,10 +703,22 @@ func TestAnalyzeWarnsOnceAboutKeptDatabasesItCannotRead(t *testing.T) {
 		t.Skip("root can open a file whatever its mode")
 	}
 	h := newHarness(t)
-	// One database of layout 2 is 28672 bytes (seven pages); the limit is room
-	// for one and not for two, as it was for layout 1 (20000 held one).
-	h.config = h.file("config.json", `{"max_total_bytes": 40000}`)
 	p := h.file("a.log", "2026-01-05 10:00:01 a\n")
+	// The limit is room for one database and not for two. The size of one is
+	// measured, from a database that the same command makes in a cache of its
+	// own, because it changes with the layout and with what analyze stores
+	// (mining adds a page or so for each index); then the limit is one and a
+	// half of it.
+	_, probeOut, probeErr := newHarness(t).run("analyze", p)
+	m := regexp.MustCompile(`(?m)^database: .+\.db \(([0-9]+) bytes\)`).FindStringSubmatch(probeOut)
+	if m == nil {
+		t.Fatalf("the probe run printed no database line; stderr %q, stdout:\n%s", probeErr, probeOut)
+	}
+	one, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil || one <= 0 {
+		t.Fatalf("the size of one database is %q", m[1])
+	}
+	h.config = h.file("config.json", fmt.Sprintf(`{"max_total_bytes": %d}`, one*3/2))
 	code, out, errOut := h.run("analyze", p)
 	if code != exitcode.OK || errOut != "" {
 		t.Fatalf("first run: code %d, stderr %q", code, errOut)
@@ -826,5 +847,293 @@ func TestListShowsOtherForADatabaseOfAnotherLayout(t *testing.T) {
 	}
 	if dbCount(t, h.cache) != 0 {
 		t.Error("clean left the database of another layout")
+	}
+}
+
+// reportLog is a log of n lines of one shape, with a time stamp each.
+func reportLog(n int) string {
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, "2026-01-05 10:00:%02d svc login ok for item %d\n", i%60, i)
+	}
+	return b.String()
+}
+
+// buildSummaryWas replaces the seam that builds the summary for one test.
+func buildSummaryWas(t *testing.T, f func(context.Context, *store.DB, summary.Options) (summary.Summary, summary.Digest, error)) {
+	t.Helper()
+	old := buildSummary
+	buildSummary = f
+	t.Cleanup(func() { buildSummary = old })
+}
+
+func TestAnalyzePrintsTheDigestAfterTheSourcesAndTheDatabaseLineLast(t *testing.T) {
+	h := newHarness(t)
+	body, _ := testlog.SSH(1, 400)
+	code, out, errOut := h.run("analyze", "--as-of", "2027-01-01", h.file("ssh.log", string(body)))
+	if code != exitcode.OK || errOut != "" {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	// The sources first, then the digest, then the summary, the database last.
+	marks := []string{
+		"aigolog " + buildinfo.Version + ": sources 1, records 400, lines 400\n",
+		"\n\npatterns\ndigest: 400 records, ",
+		"\n\nsummary\n[S1] sources\n",
+		"\n[S2] miner\n",
+		"\n[S3] patterns\n",
+		"\ndatabase: ",
+	}
+	at := -1
+	for _, m := range marks {
+		i := strings.Index(out, m)
+		if i < 0 || i <= at {
+			t.Fatalf("%q is missing or out of order (after offset %d, found at %d) in:\n%s", m, at, i, out)
+		}
+		at = i
+	}
+	last := out[strings.LastIndex(strings.TrimRight(out, "\n"), "\n")+1:]
+	if !strings.HasPrefix(last, "database: ") || strings.Count(out, "database: ") != 1 {
+		t.Errorf("the database line must come last and once, got last line %q", last)
+	}
+}
+
+func TestWithNoModelTheReportHoldsTheDigestAndTheFullSummaryWithBlockIdentifiers(t *testing.T) {
+	h := newHarness(t)
+	code, out, errOut := h.run("analyze", h.file("a.log", reportLog(20)))
+	if code != exitcode.OK || errOut != "" {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	for _, want := range []string{"\npatterns\ndigest: 20 records, ", "[S1] sources", "[S2] miner", "[S3] patterns"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no flag, and %q is missing:\n%s", want, out)
+		}
+	}
+	// The texts of B1 stay, and no line offers a command that holds log text.
+	if !strings.Contains(out, "source 1: ") || !strings.Contains(out, "  records 20, lines 20, bytes ") {
+		t.Errorf("the source lines of the first report are missing:\n%s", out)
+	}
+	if strings.Contains(out, "\naigolog query") || strings.Contains(out, "\naigolog show") {
+		t.Errorf("a command is shown:\n%s", out)
+	}
+}
+
+func TestTheSummaryFlagIsAcceptedAndChangesNothingWithNoModel(t *testing.T) {
+	h := newHarness(t)
+	p := h.file("a.log", reportLog(30))
+	// --no-keep: the line of the database is then the same for both runs.
+	codeA, plain, errA := h.run("analyze", "--as-of", "2026-06-01", "--no-keep", p)
+	codeB, flagged, errB := h.run("analyze", "--as-of", "2026-06-01", "--no-keep", "--summary", p)
+	codeC, single, errC := h.run("analyze", "-summary", "--as-of", "2026-06-01", "--no-keep", p)
+	if codeA != exitcode.OK || codeB != exitcode.OK || codeC != exitcode.OK || errA+errB+errC != "" {
+		t.Fatalf("codes %d %d %d, stderr %q %q %q", codeA, codeB, codeC, errA, errB, errC)
+	}
+	if !strings.Contains(plain, "[S3] patterns") {
+		t.Fatalf("the output to compare has no summary:\n%s", plain)
+	}
+	if flagged != plain || single != plain {
+		t.Errorf("--summary changed the output:\n--- without\n%s--- with\n%s", plain, flagged)
+	}
+}
+
+func TestJSONFlagPrintsOneDocumentAndNothingElseOnStandardOutput(t *testing.T) {
+	h := newHarness(t)
+	// A limit of one byte makes the warning about the size of the database.
+	h.config = h.file("config.json", `{"max_total_bytes": 1}`)
+	code, out, errOut := h.run("analyze", "--json", "--as-of", "2026-06-01", h.file("a.log", reportLog(20)))
+	if code != exitcode.OK {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	if !strings.Contains(errOut, "over the limit of 1 bytes") {
+		t.Errorf("the warning must be on standard error, got %q", errOut)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("the whole of standard output must be one document: %v\n%s", err, out)
+	}
+	if !strings.HasSuffix(out, "}\n") || strings.HasSuffix(out, "\n\n") || !strings.HasPrefix(out, "{\n  \"format\": 1,") {
+		t.Errorf("the document must be indented and end with one newline: %q ... %q", out[:min(30, len(out))], out[max(0, len(out)-5):])
+	}
+	for _, text := range []string{"\npatterns\n", "\nsummary\n", "\ndatabase: ", "warning"} {
+		if strings.Contains(out, text) {
+			t.Errorf("standard output holds %q from the text report or a warning", text)
+		}
+	}
+	for _, key := range []string{"format", "program", "sources", "database", "digest", "summary"} {
+		if _, ok := doc[key]; !ok {
+			t.Errorf("key %q is missing", key)
+		}
+	}
+	srcs, _ := doc["sources"].([]any)
+	if len(srcs) != 1 {
+		t.Fatalf("sources = %v", doc["sources"])
+	}
+	s0, _ := srcs[0].(map[string]any)
+	if s0["records"] != float64(20) || s0["lines"] != float64(20) || s0["layout"] != "iso-space" || s0["has_times"] != true {
+		t.Errorf("source = %v", s0)
+	}
+	if p, _ := doc["program"].(map[string]any); p["name"] != "aigolog" || p["version"] != buildinfo.Version {
+		t.Errorf("program = %v", doc["program"])
+	}
+	if dg, _ := doc["digest"].(map[string]any); dg["records"] != float64(20) {
+		t.Errorf("digest = %v", doc["digest"])
+	}
+}
+
+func TestNoKeepStillPrintsTheDigestAndSaysTheDatabaseWasRemoved(t *testing.T) {
+	h := newHarness(t)
+	code, out, errOut := h.run("analyze", "--no-keep", h.file("a.log", reportLog(20)))
+	if code != exitcode.OK || errOut != "" {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	for _, want := range []string{"\npatterns\ndigest: 20 records, 1 patterns\n", "[S3] patterns", "database: removed at the end of the run (--no-keep)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if dbCount(t, h.cache) != 0 {
+		t.Error("the database was kept")
+	}
+}
+
+func TestJSONSaysTheDatabaseWasNotKeptWithNoKeep(t *testing.T) {
+	type doc struct {
+		Database struct {
+			Path string `json:"path"`
+			Size int64  `json:"size"`
+			Kept bool   `json:"kept"`
+		} `json:"database"`
+	}
+	for _, noKeep := range []bool{true, false} {
+		h := newHarness(t)
+		args := []string{"analyze", "--json", h.file("a.log", reportLog(5))}
+		if noKeep {
+			args = append(args, "--no-keep")
+		}
+		code, out, errOut := h.run(args...)
+		var d doc
+		if err := json.Unmarshal([]byte(out), &d); code != exitcode.OK || err != nil {
+			t.Fatalf("no-keep %v: code %d, stderr %q, error %v", noKeep, code, errOut, err)
+		}
+		if d.Database.Kept == noKeep {
+			t.Errorf("no-keep %v: database.kept = %v", noKeep, d.Database.Kept)
+		}
+		if !strings.HasPrefix(d.Database.Path, h.cache) || !strings.HasSuffix(d.Database.Path, ".db") {
+			t.Errorf("no-keep %v: database.path = %q must still name the file in %s", noKeep, d.Database.Path, h.cache)
+		}
+		if d.Database.Size <= 0 {
+			t.Errorf("no-keep %v: database.size = %d, want the size before the removal", noKeep, d.Database.Size)
+		}
+		if got := dbCount(t, h.cache); got != map[bool]int{true: 0, false: 1}[noKeep] {
+			t.Errorf("no-keep %v: databases left %d", noKeep, got)
+		}
+	}
+}
+
+func TestAnalyzeHelpListsTheNewFlags(t *testing.T) {
+	h := newHarness(t)
+	code, out, errOut := h.run("analyze", "--help")
+	if code != exitcode.OK || out != "" {
+		t.Fatalf("code %d, stdout %q", code, out)
+	}
+	for _, want := range []string{
+		"[--summary] [--json]",
+		"  -summary\n",
+		"print the full summary (with no model it is always printed)",
+		"  -json\n",
+		"print the report as one JSON document on standard output",
+	} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("the help does not hold %q:\n%s", want, errOut)
+		}
+	}
+	// Wrong usage is still 2, and the new flags take no value.
+	for _, args := range [][]string{{"analyze", "--json=maybe", "x"}, {"analyze", "--summary=2", "x"}} {
+		if code, out, _ := h.run(args...); code != exitcode.Usage || out != "" {
+			t.Errorf("%v: code %d, stdout %q", args, code, out)
+		}
+	}
+}
+
+func TestAFailureToBuildTheSummaryExitsWithFiveAndRemovesTheDatabase(t *testing.T) {
+	for _, args := range [][]string{{"analyze"}, {"analyze", "--json"}, {"analyze", "--no-keep"}} {
+		h := newHarness(t)
+		buildSummaryWas(t, func(context.Context, *store.DB, summary.Options) (summary.Summary, summary.Digest, error) {
+			return summary.Summary{}, summary.Digest{}, errors.New("boom")
+		})
+		code, out, errOut := h.run(append(args, h.file("a.log", reportLog(5)))...)
+		if code != exitcode.StorageUnavailable {
+			t.Errorf("%v: exit code %d, want 5", args, code)
+		}
+		if want := "aigolog: the report could not be built: boom\n"; errOut != want {
+			t.Errorf("%v: standard error %q, want %q", args, errOut, want)
+		}
+		if out != "" {
+			t.Errorf("%v: no half report on standard output, got %q", args, out)
+		}
+		if dbCount(t, h.cache) != 0 || hasFile(h.cache, "*.lock") {
+			t.Errorf("%v: the database or its lock file is left", args)
+		}
+	}
+}
+
+func TestAFailureToBuildTheSummaryReportsAFailureToRemoveTheDatabaseAsNoKeepDoes(t *testing.T) {
+	h := newHarness(t)
+	buildSummaryWas(t, func(context.Context, *store.DB, summary.Options) (summary.Summary, summary.Digest, error) {
+		return summary.Summary{}, summary.Digest{}, errors.New("boom")
+	})
+	removeRunWas(t, func(db *store.DB) error { return errors.New("access denied") })
+	code, out, errOut := h.run("analyze", h.file("a.log", reportLog(5)))
+	want := "aigolog: the report could not be built: boom\naigolog: warning: could not remove the database: access denied\n"
+	if code != exitcode.StorageUnavailable || out != "" || errOut != want {
+		t.Errorf("code %d, stdout %q, stderr %q, want %q", code, out, errOut, want)
+	}
+}
+
+func TestASignalWhileTheSummaryIsBuiltIsAnInterruptionAndRemovesTheDatabase(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	h.ctx = ctx
+	buildSummaryWas(t, func(c context.Context, _ *store.DB, _ summary.Options) (summary.Summary, summary.Digest, error) {
+		cancel()
+		return summary.Summary{}, summary.Digest{}, c.Err()
+	})
+	code, out, errOut := h.run("analyze", h.file("a.log", reportLog(5)))
+	if code != exitcode.Failure || out != "" || errOut != "aigolog: interrupted\n" || dbCount(t, h.cache) != 0 {
+		t.Errorf("code %d, stdout %q, stderr %q, databases %d", code, out, errOut, dbCount(t, h.cache))
+	}
+}
+
+func TestTheSummaryIsBuiltWithTheDefaultOptionsWhileTheDatabaseIsStillThere(t *testing.T) {
+	h := newHarness(t)
+	var got summary.Options
+	var existed bool
+	buildSummaryWas(t, func(ctx context.Context, db *store.DB, o summary.Options) (summary.Summary, summary.Digest, error) {
+		got = o
+		_, err := os.Stat(db.Path())
+		existed = err == nil
+		return summary.Build(ctx, db, o)
+	})
+	code, _, errOut := h.run("analyze", "--no-keep", h.file("a.log", reportLog(5)))
+	if code != exitcode.OK || errOut != "" {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	if got != summary.DefaultOptions() || !existed {
+		t.Errorf("options %+v (want the defaults), database there at the build: %v", got, existed)
+	}
+}
+
+func TestAJSONReportThatCannotBeWrittenExitsWithOneAndSaysSo(t *testing.T) {
+	h := newHarness(t)
+	var e bytes.Buffer
+	vars := map[string]string{"AIGOLOG_CACHE_DIR": h.cache, "AIGOLOG_CONFIG": filepath.Join(h.cache, "no-config.json")}
+	code := RunEnv(Env{
+		Stdout:    failingWriter{},
+		Stderr:    &e,
+		LookupEnv: func(k string) (string, bool) { v, ok := vars[k]; return v, ok },
+		Now:       func() time.Time { return h.now },
+		Zone:      time.UTC,
+	}, []string{"analyze", "--json", h.file("a.log", reportLog(5))})
+	if code != exitcode.Failure || !strings.Contains(e.String(), "aigolog: the report could not be written: ") {
+		t.Errorf("code %d, stderr %q", code, e.String())
 	}
 }

@@ -151,6 +151,11 @@ const (
 	step     = 20 * time.Millisecond
 )
 
+// childDeadline is how long a test waits for a child to end. An analysis mines
+// every record, and mining 300,000 lines took 33 to 46 s on a loaded machine;
+// a slow runner must not fail on time, and a child that hangs is still caught.
+const childDeadline = 180 * time.Second
+
 // waitFor polls cond until it holds. It fails the test at the deadline.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
@@ -303,8 +308,8 @@ func (c *child) wait() *os.ProcessState {
 	c.t.Helper()
 	select {
 	case <-c.done:
-	case <-time.After(deadline):
-		c.t.Fatalf("the child did not end within %v; stderr %q", deadline, c.stderr.String())
+	case <-time.After(childDeadline):
+		c.t.Fatalf("the child did not end within %v; stderr %q", childDeadline, c.stderr.String())
 	}
 	return c.cmd.ProcessState
 }
@@ -677,7 +682,12 @@ func TestMemoryOfAProcessStaysBounded(t *testing.T) {
 	small := peak(30000)
 	big := peak(300000)
 	// A program that kept the text of the records would show a tenfold input
-	// as a larger peak: 300,000 lines of 250 bytes are 75 MB.
+	// as a larger peak: 300,000 lines of 250 bytes are 75 MB. The size of the
+	// large input is kept: the ratio of the two inputs is 10 (at least 4), the
+	// lines are 250 bytes (at least 200), and the volume of 75 MB is less than
+	// twice the peak of the child (31 to 42 MiB), so fewer lines would be less than
+	// the peak and prove less; the limit is 1.5 times the small peak and 16 MiB,
+	// which a log kept whole (the peak plus 75 MB) exceeds.
 	if limit := small*3/2 + 16<<20; big >= limit {
 		t.Errorf("the peak resident size grew with the input: %d bytes for 300,000 lines, %d for 30,000; limit %d", big, small, limit)
 	}

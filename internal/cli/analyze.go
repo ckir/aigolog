@@ -23,12 +23,15 @@ import (
 	"github.com/ckir/aigolog/internal/config"
 	"github.com/ckir/aigolog/internal/exitcode"
 	"github.com/ckir/aigolog/internal/ingest"
+	"github.com/ckir/aigolog/internal/miner"
+	reports "github.com/ckir/aigolog/internal/report"
 	"github.com/ckir/aigolog/internal/store"
+	"github.com/ckir/aigolog/internal/summary"
 	"github.com/ckir/aigolog/internal/textsafe"
 	"github.com/ckir/aigolog/internal/timeparse"
 )
 
-const analyzeUsage = "Usage: aigolog analyze [--format auto|text] [--as-of TIME] [--no-keep] <file>... | -"
+const analyzeUsage = "Usage: aigolog analyze [--format auto|text] [--as-of TIME] [--no-keep] [--summary] [--json] <file>... | -"
 
 // givenString is a string flag that knows whether it was given, so that an
 // empty value (an unset shell variable in --as-of "$ASOF") is not taken for an
@@ -55,6 +58,11 @@ type analyzeArgs struct {
 	files  []string // in the order given; - is standard input
 	asOf   *int64   // --as-of, in wall-clock nanoseconds, or nil
 	noKeep bool     // --no-keep
+	// summary is --summary. With no model the full summary is always printed,
+	// so the flag changes nothing yet; it is read when a model runs.
+	summary bool
+	// json is --json: the report is one JSON document, not text.
+	json bool
 }
 
 // parseAnalyzeArgs reads the command line of analyze. Flags may come before,
@@ -73,6 +81,8 @@ func parseAnalyzeArgs(env Env, args []string) (a analyzeArgs, code int, ok bool)
 	var asOf givenString
 	fs.Var(&asOf, "as-of", "the date that logs without a year are placed before: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS")
 	fs.BoolVar(&a.noKeep, "no-keep", false, "remove the database at the end of the run")
+	fs.BoolVar(&a.summary, "summary", false, "print the full summary (with no model it is always printed)")
+	fs.BoolVar(&a.json, "json", false, "print the report as one JSON document on standard output, and no text report")
 
 	rest := args
 	for {
@@ -210,9 +220,13 @@ func interruptContext(w io.Writer) (ctx context.Context, stop func()) {
 	}
 }
 
-// removeRun removes the database at the end of a --no-keep run; a test
-// replaces it.
+// removeRun removes the database at the end of a --no-keep run, and of a run
+// whose report could not be built; a test replaces it.
 var removeRun = func(db *store.DB) error { return db.Remove() }
+
+// buildSummary makes the summary and the digest of the database of a run; a
+// test replaces it.
+var buildSummary = summary.Build
 
 // analyze reads logs into a new database and says what was read.
 func analyze(env Env, args []string) int {
@@ -308,7 +322,7 @@ func analyze(env Env, args []string) int {
 		report(env.Stderr, fmt.Sprintf("cannot write the database in %s: %v", dir, err))
 		return exitcode.StorageUnavailable
 	}
-	res, err := ingest.Run(ctx, db, inputs, ingest.Options{AsOf: a.asOf, Now: now, Zone: env.Zone})
+	res, err := ingest.Run(ctx, db, inputs, ingest.Options{AsOf: a.asOf, Now: now, Zone: env.Zone, Miner: miner.New(miner.DefaultConfig())})
 	if err != nil {
 		if ctx.Err() != nil {
 			// An interruption, whatever error it made on the way: the
@@ -333,6 +347,24 @@ func analyze(env Env, args []string) int {
 		return code
 	}
 
+	// The summary and the digest are made while the database is still there,
+	// and the report is printed after --no-keep has removed it.
+	sum, dig, err := buildSummary(ctx, db, summary.DefaultOptions())
+	if err != nil {
+		code := exitcode.StorageUnavailable
+		if ctx.Err() != nil {
+			// A signal while the summary was built: an interruption, as in Run.
+			report(env.Stderr, "interrupted")
+			code = exitcode.Failure
+		} else {
+			report(env.Stderr, "the report could not be built: "+err.Error())
+		}
+		if rmErr := removeRun(db); rmErr != nil {
+			report(env.Stderr, "warning: could not remove the database: "+rmErr.Error())
+		}
+		return code
+	}
+
 	size, sizeErr := db.Size()
 	if sizeErr != nil {
 		warn(env.Stderr, sizeErr)
@@ -349,7 +381,26 @@ func analyze(env Env, args []string) int {
 		var re *store.RemoveError
 		kept = rmErr != nil && !(errors.As(rmErr, &re) && re.DBGone)
 	}
-	printSummary(env.Stdout, res, db.Path(), size, kept, cfg.KeepDays)
+	code = exitcode.OK
+	if a.json {
+		doc := reports.Report{
+			Format:   reports.FormatVersion,
+			Program:  reports.Program{Name: "aigolog", Version: buildinfo.Version},
+			Sources:  reports.SourceLines(res),
+			Database: reports.DatabaseLine{Path: db.Path(), Size: size, Kept: kept},
+			Digest:   dig,
+			Summary:  sum,
+		}
+		if err := reports.WriteJSON(env.Stdout, doc); err != nil {
+			report(env.Stderr, "the report could not be written: "+err.Error())
+			code = exitcode.Failure
+		}
+	} else {
+		printSources(env.Stdout, res)
+		reports.WriteDigest(env.Stdout, dig)
+		reports.WriteSummary(env.Stdout, sum)
+		printDatabase(env.Stdout, db.Path(), size, kept, cfg.KeepDays)
+	}
 	if kept && !a.noKeep && size > cfg.MaxTotalBytes {
 		// The summary says how long the database is kept, but the size limit
 		// removes the oldest databases first at the next analysis, this one
@@ -361,7 +412,7 @@ func analyze(env Env, args []string) int {
 			warn(env.Stderr, err)
 		}
 	}
-	return exitcode.OK
+	return code
 }
 
 // summaryTime formats the nanoseconds of a time as the summary shows it.
@@ -378,9 +429,9 @@ var anchorKinds = map[string]string{
 	store.AnchorNow:     "the current time",
 }
 
-// printSummary writes the summary of a run. kept says whether the database is
-// still there; path and size are those of the database.
-func printSummary(w io.Writer, res ingest.Result, path string, size int64, kept bool, keepDays int) {
+// printSources writes the head of the text report: the totals of the run and
+// what became of each input.
+func printSources(w io.Writer, res ingest.Result) {
 	stored := 0
 	for _, s := range res.Sources {
 		if s.ID != 0 {
@@ -424,6 +475,11 @@ func printSummary(w io.Writer, res ingest.Result, path string, size int64, kept 
 			fmt.Fprintf(w, "  note: joined text was cut at 1 MiB %d times; each cut started a new record\n", s.CutRecords)
 		}
 	}
+}
+
+// printDatabase writes the last line of the text report. kept says whether the
+// database is still there; path and size are those of the database.
+func printDatabase(w io.Writer, path string, size int64, kept bool, keepDays int) {
 	if kept {
 		fmt.Fprintf(w, "database: %s (%d bytes), kept %d days\n", textsafe.Clean(path), size, keepDays)
 	} else {
