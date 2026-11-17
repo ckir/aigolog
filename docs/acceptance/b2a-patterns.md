@@ -71,7 +71,7 @@ Workflow `check`, run `44086986806` (the first push, commit `4855f09`): `floor` 
 
 Workflow `check`, run `44087950060` (commit after that fix): all five jobs green: `floor (go 1.26.0)`, `check (ubuntu-24.04)`, `check (ubuntu-24.04-arm)`, `check (windows-2025)`, `check (windows-11-arm)`. CodeQL on both pushes (runs `44086955284`, `44087934036`): success, no open alert on the branch.
 
-What this proves: the read-only URI form of a Windows volume path is accepted (the `analyze` tests that build the summary and the smoke run passed on both Windows machines); `peak_windows.go` returned a figure on both; the fetch script ran under the `sh` of Git for Windows; the `ubuntu-24.04-arm` runner and its `just` download work; the `floor` job builds and tests with Go 1.26.0. It does not prove the UNC folder form, which no job uses.
+What this proves: the read-only URI form of a Windows volume path is accepted (the tests of `internal/store` and `internal/ingest` that call `store.Open` on real files passed on both Windows machines); `peak_windows.go` returned a figure on both; the fetch script ran under the `sh` of Git for Windows; the `ubuntu-24.04-arm` runner and its `just` download work; the `floor` job builds and tests with Go 1.26.0. It does not prove the UNC folder form, which no job uses.
 
 The smoke step (`just measure-smoke`: 20,000 lines, 1 run, so one sample on a shared hosted machine, not a range; the machines' load was not controlled), for the generated ssh log, 6 patterns, 1 record in a pattern seen once, 0 in the catch-all on every machine:
 
