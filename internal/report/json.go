@@ -14,7 +14,14 @@ import (
 )
 
 // WriteJSON writes r as one document, indented by two spaces, that ends with a
-// newline, with one Write. Nothing is written when r cannot be encoded.
+// newline, with one Write. Nothing is written when r cannot be encoded. It is
+// WriteValue of r.
+func WriteJSON(w io.Writer, r Report) error { return WriteValue(w, r) }
+
+// WriteValue writes v as WriteJSON writes a report: one document, indented by
+// two spaces, that ends with a newline, with one Write; nothing is written when
+// v cannot be encoded. It is the encoding for every JSON that aigolog prints (the
+// report, the answer to a question), so that all of it has the same escapes.
 //
 // HTML escaping is off: the text of a pattern holds <*>, <int> and <ip4>, which
 // the default encoder would write as \u003c*\u003e. The encoder writes every
@@ -24,12 +31,12 @@ import (
 // (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069), and the
 // document may be printed to a terminal. escapeControls writes those as
 // escapes too, so that no raw control character is in the document.
-func WriteJSON(w io.Writer, r Report) error {
+func WriteValue(w io.Writer, v any) error {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(r); err != nil {
+	if err := enc.Encode(v); err != nil {
 		return err
 	}
 	_, err := w.Write(escapeControls(buf.Bytes()))
