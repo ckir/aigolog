@@ -46,8 +46,9 @@ type StoredAnswer struct {
 // holder has the lock, and ErrNoLock when there is no lock file (the lock file
 // is never made). The write goes through a connection of its own, in the
 // default rollback journal mode, so that a crash in the middle of the insert
-// leaves the database as it was; a file or a folder that cannot be written
-// gives an error and stores nothing. The connection is closed and the lock is
+// leaves the data as it was: the crash leaves a hot journal (the file
+// <name>.db-journal), and the next Open rolls the interrupted write back. A
+// file or a folder that cannot be written gives an error and stores nothing. The connection is closed and the lock is
 // released before SaveAnswer returns. Any other failure is returned wrapped.
 // now is the time stored with the answer, to the second.
 func SaveAnswer(ctx context.Context, path, question, answer string, now time.Time) (int64, error) {
