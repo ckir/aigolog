@@ -52,6 +52,10 @@ test:
 # The gate.
 check: fmt-check vet vet-cross license-check test
 
+# Write a generated test log (kind: ssh, restart or web) to a file, or to standard output when none is given.
+genlog kind seed="1" lines="1000" out="":
+    go run ./cmd/genlog -kind {{quote(kind)}} -seed {{quote(seed)}} -lines {{quote(lines)}} {{ if out == "" { "" } else { "-o " + quote(out) } }}
+
 # Build the program for the four targets into dist/.
 build:
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "{{ldflags}}" -o dist/aigolog-linux-amd64 ./cmd/aigolog
