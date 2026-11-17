@@ -27,16 +27,19 @@ Without `-bin`, `measure` builds `./cmd/aigolog` with `go build` into the tempor
 ```sh
 just measure                                  # the size of the full OpenSSH log (655,146 lines), two runs
 just measure -kind web -lines 100000 -runs 3  # another kind, size and number of runs
+just measure -kind dense -lines 300 -runs 2   # the number-dense log: 300 clusters of 256 tokens
 just measure-smoke                            # 20,000 lines, one run: only to see that it works
 go run ./cmd/measure -json                    # the figures as one JSON document
 go run ./cmd/measure -bars                    # also run a smaller size and decide the four bars
 ```
 
+`measure` writes its temporary folder under `TMPDIR` (`os.MkdirTemp`). Where `/tmp` is held in RAM (a `tmpfs`), set `TMPDIR` to a folder on a disk, or the log and the database count against the memory of the machine.
+
 The flags:
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `-kind ssh\|restart\|web` | `ssh` | the kind of generated log |
+| `-kind ssh\|restart\|web\|dense` | `ssh` | the kind of generated log; `dense` is lines of 256 tokens that hold 30 to 42 integers each, the shape that made the miner use most memory and the database largest |
 | `-lines N` | 655146 | the number of lines of the log |
 | `-seed N` | 1 | the seed; the same seed gives the same log |
 | `-runs N` | 2 | how many times the log is analyzed |

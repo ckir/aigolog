@@ -22,8 +22,9 @@ func TestGenlogWritesTheRequestedLinesAndRefusesAnUnknownKind(t *testing.T) {
 		"ssh":     func() []byte { b, _ := testlog.SSH(3, 50); return b },
 		"restart": func() []byte { b, _ := testlog.Restart(3, 50); return b },
 		"web":     func() []byte { b, _ := testlog.Web(3, 50); return b },
+		"dense":   func() []byte { return testlog.Dense(3, 50) },
 	}
-	for _, kind := range []string{"ssh", "restart", "web"} {
+	for _, kind := range []string{"ssh", "restart", "web", "dense"} {
 		t.Run(kind, func(t *testing.T) {
 			// To a file.
 			path := filepath.Join(t.TempDir(), "out.log")

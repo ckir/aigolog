@@ -19,6 +19,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ckir/aigolog/internal/testlog"
 )
 
 // binDir holds the programs the tests build once: the real aigolog, and the
@@ -442,6 +444,28 @@ func TestABarWithNoFigureIsNotDecidedNeverMet(t *testing.T) {
 	}
 	if got := decideBars(barInput{Wanted: 1, Completed: 1})[3].Result; got != "not decided" {
 		t.Errorf("bar 4 with no figure is %q, want not decided", got)
+	}
+}
+
+func TestMeasureAcceptsTheDenseKind(t *testing.T) {
+	// Through the stub: the kind passes the check and the run is started.
+	stub := exitingProgram(t, 3)
+	code, _, errOut := measure(t, "-kind", "dense", "-lines", "20", "-runs", "1", "-bin", stub)
+	if code != 1 || !strings.Contains(errOut, "run 1") || !strings.Contains(errOut, "code 3") {
+		t.Errorf("exit %d, stderr %q: want the failure of run 1 with code 3, not a usage error", code, errOut)
+	}
+	// Through the real program: the log is the dense one.
+	code, out, errOut := measure(t, "-kind", "dense", "-lines", "20", "-runs", "1", "-bin", program(t), "-json")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errOut)
+	}
+	doc := decode(t, out)
+	if got := doc["kind"]; got != "dense" {
+		t.Errorf("kind = %v, want dense", got)
+	}
+	run := doc["runs"].([]any)[0].(map[string]any)
+	if got, want := run["log_bytes"], float64(len(testlog.Dense(1, 20))); got != want {
+		t.Errorf("log_bytes = %v, want %v, the size of the dense log of 20 lines", got, want)
 	}
 }
 

@@ -37,7 +37,7 @@ import (
 	"github.com/ckir/aigolog/internal/textsafe"
 )
 
-const usage = "Usage: measure [-kind ssh|restart|web] [-lines N] [-seed N] [-runs N] [-bin PATH] [-keep] [-json] [-bars] [-small-lines N]"
+const usage = "Usage: measure [-kind ssh|restart|web|dense] [-lines N] [-seed N] [-runs N] [-bin PATH] [-keep] [-json] [-bars] [-small-lines N]"
 
 // The four bars of the acceptance record (A6). They are the owner's
 // provisional bars; they are variables so that a test can set them.
@@ -102,7 +102,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fs.PrintDefaults()
 	}
 	var o options
-	fs.StringVar(&o.kind, "kind", "ssh", "the kind of log: ssh, restart or web")
+	fs.StringVar(&o.kind, "kind", "ssh", "the kind of log: ssh, restart, web or dense")
 	fs.IntVar(&o.lines, "lines", 655146, "the number of lines of the log (the default is the size of the full OpenSSH log)")
 	fs.Int64Var(&o.seed, "seed", 1, "the seed: the same seed gives the same log")
 	fs.IntVar(&o.runs, "runs", 2, "how many times each log is analyzed, at least 1")
@@ -124,8 +124,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch {
 	case fs.NArg() > 0:
 		return wrong("unexpected argument %q", fs.Arg(0))
-	case o.kind != "ssh" && o.kind != "restart" && o.kind != "web":
-		return wrong("unknown kind %q: want ssh, restart or web", o.kind)
+	case o.kind != "ssh" && o.kind != "restart" && o.kind != "web" && o.kind != "dense":
+		return wrong("unknown kind %q: want ssh, restart, web or dense", o.kind)
 	case o.runs < 1:
 		return wrong("-runs must be at least 1, not %d", o.runs)
 	case o.lines < 1:
@@ -457,6 +457,8 @@ func generate(kind string, seed int64, lines int) []byte {
 		data, _ = testlog.Restart(seed, lines)
 	case "web":
 		data, _ = testlog.Web(seed, lines)
+	case "dense":
+		data = testlog.Dense(seed, lines)
 	default:
 		data, _ = testlog.SSH(seed, lines)
 	}

@@ -35,6 +35,14 @@ const (
 	MaxValueBytes = 512
 	// MaxTokenTextBytes is the longest Text a Token holds.
 	MaxTokenTextBytes = 256
+	// MaxTokenValues is the most typed values Scan takes from one token; the
+	// rest of the token is copied as text.
+	MaxTokenValues = 8
+	// MaxMessageValues is the most typed values Scan takes from one message;
+	// the tokens after the last value taken are copied as text. With
+	// MaxTokens it bounds the slots of a pattern: at most MaxMessageValues
+	// typed slots and one Word slot for each wildcard token.
+	MaxMessageValues = 64
 )
 
 // Caps on the length of a value, in bytes. A longer hexadecimal run or
@@ -76,7 +84,8 @@ type Value struct {
 // Token is one white-space separated word of a message. Raw is the token as
 // written. Text is Raw with each typed value replaced by its marker, at most
 // MaxTokenTextBytes bytes long: a marker is put in only when it fits whole, and
-// masking stops at the first value whose marker does not fit, so Values holds
+// masking stops at the first value whose marker does not fit and once the token
+// holds MaxTokenValues values or the message MaxMessageValues, so Values holds
 // exactly the values whose markers are in Text, in order, as written. The rest
 // of the token after that point is copied unmasked, cut on a character
 // boundary.
@@ -88,8 +97,13 @@ type Token struct {
 
 // Scan splits msg on ASCII white space into at most MaxTokens tokens (text
 // after the last token taken is ignored) and masks the typed values of each.
+//
+// A message keeps at most MaxMessageValues typed values and a token at most
+// MaxTokenValues; past either the rest is copied as text, so a log of long runs
+// of numbers cannot make a pattern with thousands of slots.
 func Scan(msg string) []Token {
 	var toks []Token
+	left := MaxMessageValues // values the message may still take
 	i, n := 0, len(msg)
 	for len(toks) < MaxTokens {
 		for i < n && isSpace(msg[i]) {
@@ -102,7 +116,9 @@ func Scan(msg string) []Token {
 		for j < n && !isSpace(msg[j]) {
 			j++
 		}
-		toks = append(toks, scanToken(msg[i:j]))
+		tok := scanToken(msg[i:j], left)
+		left -= len(tok.Values)
+		toks = append(toks, tok)
 		i = j
 	}
 	return toks
@@ -147,8 +163,9 @@ func isWord(b byte) bool {
 	return isDigit(b) || (b|0x20 >= 'a' && b|0x20 <= 'z') || b == '_' || b >= 0x80
 }
 
-// scanToken masks the typed values of one token.
-func scanToken(raw string) Token {
+// scanToken masks the typed values of one token, at most MaxTokenValues and at
+// most left.
+func scanToken(raw string, left int) Token {
 	tok := Token{Raw: raw}
 	var sb strings.Builder
 	copied := 0 // raw[:copied] has been written to sb
@@ -160,6 +177,9 @@ func scanToken(raw string) Token {
 		if typ == Word {
 			i++
 			continue
+		}
+		if len(tok.Values) >= MaxTokenValues || len(tok.Values) >= left {
+			break // masking stops here; the rest is copied as it is
 		}
 		marker := typ.Marker()
 		if sb.Len()+(i-copied)+len(marker) > MaxTokenTextBytes {
