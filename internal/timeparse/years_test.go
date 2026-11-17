@@ -181,3 +181,42 @@ func TestTheAsOfMessageDoesNotUseGoReferenceDates(t *testing.T) {
 		t.Errorf("message = %q", msg)
 	}
 }
+
+func TestParseAsOfAcceptsOnlyTheFiveFormsAtTheirFullLength(t *testing.T) {
+	for _, in := range []string{"2026-11-16 7:05", "2026-11-16 07:05:09.5", "2026-11-16T07:05:09.123", "2026-11-16 07:05:09 "} {
+		if n, err := ParseAsOf(in); err == nil {
+			t.Errorf("ParseAsOf(%q) = %d, want an error", in, n)
+		}
+	}
+	for _, in := range []string{"2026-11-16", "2026-11-16 07:05", "2026-11-16 07:05:09", "2026-11-16T07:05", "2026-11-16T07:05:09"} {
+		if _, err := ParseAsOf(in); err != nil {
+			t.Errorf("ParseAsOf(%q): %v", in, err)
+		}
+	}
+}
+
+func TestResolveRefusesATimeOfDayOutsideTheDay(t *testing.T) {
+	anchor := mustAsOf(t, "2026-11-16")
+	for _, n := range []int64{-1, 86400e9} {
+		if got, ok := NewYearResolver(anchor).Resolve(11, 15, n); ok {
+			t.Errorf("Resolve(11, 15, %d) = %d, true; want false", n, got)
+		}
+	}
+	for _, n := range []int64{0, 86399999999999} {
+		if _, ok := NewYearResolver(anchor).Resolve(11, 15, n); !ok {
+			t.Errorf("Resolve(11, 15, %d) = false; want true", n)
+		}
+	}
+}
+
+func TestParseAsOfNamesNonexistentDates(t *testing.T) {
+	_, err := ParseAsOf("2026-02-30")
+	if err == nil {
+		t.Fatal("2026-02-30 was accepted")
+	}
+	for _, form := range []string{"YYYY-MM-DD", "YYYY-MM-DD HH:MM", "YYYY-MM-DD HH:MM:SS", "the same with T"} {
+		if !strings.Contains(err.Error(), form) {
+			t.Errorf("message %q does not name the form %q", err.Error(), form)
+		}
+	}
+}

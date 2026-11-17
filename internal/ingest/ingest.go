@@ -227,14 +227,20 @@ func flush(ctx context.Context, db *store.DB, batch []record.Record) error {
 }
 
 // anchor returns the kind and the wall-clock nanoseconds of the anchor of a
-// source that has no year.
+// source that has no year. A modification time that does not fit in int64
+// nanoseconds is not used: the current time is taken instead.
 func anchor(in Input, o Options, zone *time.Location, now time.Time) (string, int64) {
-	switch {
-	case o.AsOf != nil:
+	if o.AsOf != nil {
 		return store.AnchorAsOf, *o.AsOf
-	case !in.ModTime.IsZero():
-		return store.AnchorModTime, timeparse.WallNanos(in.ModTime.In(zone))
-	default:
-		return store.AnchorNow, timeparse.WallNanos(now.In(zone))
 	}
+	if !in.ModTime.IsZero() {
+		if n, ok := timeparse.WallNanos(in.ModTime.In(zone)); ok {
+			return store.AnchorModTime, n
+		}
+	}
+	n, ok := timeparse.WallNanos(now.In(zone))
+	if !ok {
+		n, _ = timeparse.WallNanos(time.Now().In(zone))
+	}
+	return store.AnchorNow, n
 }

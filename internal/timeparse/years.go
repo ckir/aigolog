@@ -43,8 +43,12 @@ func addDay(n int64) int64 {
 // Resolve returns the wall-clock nanoseconds of the stamp with this month, day
 // and time of day, in the latest year that does not put it after the limit.
 // 29 February is placed only in a leap year. The stamp then becomes the limit,
-// with one day of slack, for the next call. It is false when no year fits.
+// with one day of slack, for the next call. It is false when no year fits, and
+// when nanoOfDay is not within one day (0 up to, not including, 24 hours).
 func (r *YearResolver) Resolve(month, dayOfMonth int, nanoOfDay int64) (int64, bool) {
+	if nanoOfDay < 0 || nanoOfDay >= int64(day) {
+		return 0, false
+	}
 	top := time.Unix(0, r.limit).UTC().Year()
 	for y := top; y >= top-maxBack; y-- {
 		t := time.Date(y, time.Month(month), dayOfMonth, 0, 0, 0, 0, time.UTC)
@@ -78,9 +82,14 @@ var asOfLayouts = []struct {
 // ParseAsOf reads the date that --as-of gives. 2006-01-02 means the last
 // nanosecond of that day; 2006-01-02 15:04 and 2006-01-02 15:04:05, and the
 // same with T in place of the space, mean that wall-clock time. The result is
-// wall-clock nanoseconds.
+// wall-clock nanoseconds. Only text of 10, 16 or 19 bytes is taken, so that a
+// one-digit hour or a fraction of a second, which the Go parser would read, is
+// refused.
 func ParseAsOf(s string) (int64, error) {
 	for _, l := range asOfLayouts {
+		if len(s) != len(l.layout) {
+			continue
+		}
 		t, err := time.Parse(l.layout, s)
 		if err != nil {
 			continue

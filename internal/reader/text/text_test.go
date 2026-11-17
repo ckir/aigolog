@@ -254,6 +254,103 @@ func TestALoneCarriageReturnIsNotALineEnd(t *testing.T) {
 	}
 }
 
+func TestALoneCarriageReturnAtTheVeryEndIsDroppedWithTheLineEnd(t *testing.T) {
+	_, recs := readAll(t, []byte("a\nb\r"))
+	if want := []string{"a", "b"}; !sameStrings(raws(recs), want) {
+		t.Errorf("got %q, want %q", raws(recs), want)
+	}
+}
+
+// A line that the underlying reader cuts short by failing is dropped, and the
+// error follows the complete records. This is pinned, not wanted: a failed
+// read fails the run and the database is removed, so nothing can observe the
+// lost line (a known minor of B1; see Reader.readLine).
+func TestAPartialLineBeforeAReadErrorIsDroppedAndTheErrorFollowsTheCompleteRecords(t *testing.T) {
+	disk := errors.New("disk")
+	// The failure comes past the first block, which New reads, so that New
+	// itself does not fail.
+	prefix := strings.Repeat("0123456789abcdef\n", (SampleBytes/17)+500)
+	r, err := New(io.MultiReader(strings.NewReader(prefix+"one\ntwo"), iotest.ErrReader(disk)))
+	if err != nil {
+		t.Fatalf("New must not fail: the error is past the sample: %v", err)
+	}
+	var got []string
+	var last error
+	for last == nil {
+		rec, err := r.Next()
+		if err != nil {
+			last = err
+			break
+		}
+		got = append(got, rec.Raw)
+	}
+	if want := strings.Count(prefix, "\n") + 1; len(got) != want || got[len(got)-1] != "one" {
+		t.Errorf("got %d records, the last %q; want %d, the last \"one\"", len(got), got[len(got)-1], want)
+	}
+	for _, g := range got {
+		if g == "two" {
+			t.Error("the partial line \"two\" was returned")
+		}
+	}
+	if !errors.Is(last, disk) {
+		t.Errorf("error = %v, want one that wraps %v", last, disk)
+	}
+}
+
+// exactLines returns text of whole lines, each "2026-01-05 10:00:01 " and
+// filler, that is n bytes long, and the lines without their ends. Every line
+// is 32 bytes with its newline except the last, which takes what is left.
+func exactLines(n int, finalNewline bool) (string, []string) {
+	const width = 32
+	count := n / width
+	var b strings.Builder
+	var lines []string
+	for i := 0; i < count; i++ {
+		size := width
+		if i == count-1 {
+			size = n - width*(count-1)
+		}
+		line := fmt.Sprintf("2026-01-05 10:00:01 %04d", i)
+		line += strings.Repeat("x", size-1-len(line))
+		lines = append(lines, line)
+		b.WriteString(line)
+		if i < count-1 || finalNewline {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String(), lines
+}
+
+func TestASampleOfExactly64KiBTreatsTheLastLineAsWhole(t *testing.T) {
+	for _, n := range []int{SampleBytes - 1, SampleBytes, SampleBytes + 1} {
+		for _, final := range []bool{true, false} {
+			input, want := exactLines(n, final)
+			if wantLen := n; !final {
+				wantLen = n - 1
+				if len(input) != wantLen {
+					t.Fatalf("n=%d: generator made %d bytes, want %d", n, len(input), wantLen)
+				}
+			} else if len(input) != n {
+				t.Fatalf("n=%d: generator made %d bytes", n, len(input))
+			}
+			r, recs := readAll(t, []byte(input))
+			layout, found := r.Layout()
+			if !found || layout.Name != "iso-space" {
+				t.Errorf("n=%d final newline %v: layout = %q, %v; want iso-space, true", n, final, layout.Name, found)
+			}
+			if !sameStrings(raws(recs), want) {
+				t.Errorf("n=%d final newline %v: %d records, want %d whole lines", n, final, len(recs), len(want))
+			}
+			for _, rec := range recs {
+				if rec.Stamp.State != record.Resolved {
+					t.Errorf("n=%d final newline %v: record %d has no stamp", n, final, rec.Line)
+					break
+				}
+			}
+		}
+	}
+}
+
 // smallCap is the cap on a record in the tests of the cap.
 const smallCap = 100
 

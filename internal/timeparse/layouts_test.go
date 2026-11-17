@@ -31,12 +31,12 @@ func layoutNamed(t *testing.T, name string) Layout {
 	return Layout{}
 }
 
-func TestLayoutsAreTheNineOfTheDesignInOrder(t *testing.T) {
+func TestLayoutsAreTheKnownOnesInOrder(t *testing.T) {
 	var names []string
 	for _, l := range Layouts {
 		names = append(names, l.Name)
 	}
-	want := "rfc3339 iso-space-offset iso-space-offset-sp clf iso-t iso-space slash ctime syslog"
+	want := "rfc3339 iso-space-offset iso-space-offset-sp iso-t-offset-plain iso-space-offset-plain clf iso-t iso-space slash ctime syslog"
 	if got := strings.Join(names, " "); got != want {
 		t.Errorf("layout names = %q, want %q", got, want)
 	}
@@ -232,5 +232,41 @@ func TestParseStillAcceptsAStampWithNoYear(t *testing.T) {
 	want := record.Stamp{State: record.YearPending, Month: 12, Day: 31, NanoOfDay: int64(23*time.Hour + 59*time.Minute + 59*time.Second)}
 	if got, ok := layoutNamed(t, "syslog").Parse("Dec 31 23:59:59 host x"); !ok || got != want {
 		t.Errorf("Parse = %+v, %v; want %+v, true", got, ok, want)
+	}
+}
+
+func TestZonesWrittenWithoutAColonAreRead(t *testing.T) {
+	cases := []struct {
+		layout, plain, colon, zone string
+	}{
+		{"iso-t-offset-plain", "2026-11-16T08:15:22+0200 x", "2026-11-16T08:15:22+02:00 x", "+0200"},
+		{"iso-space-offset-plain", "2026-11-16 08:15:22-0530 x", "2026-11-16 08:15:22-05:30 x", "-0530"},
+	}
+	for _, c := range cases {
+		got, ok := layoutNamed(t, c.layout).Parse(c.plain)
+		if !ok || !got.Exact || got.State != record.Resolved || got.Zone != c.zone {
+			t.Errorf("%s: Parse(%q) = %+v, %v; want an exact stamp with zone %q", c.layout, c.plain, got, ok, c.zone)
+			continue
+		}
+		colonName := "rfc3339"
+		if c.colon[10] == ' ' {
+			colonName = "iso-space-offset"
+		}
+		want, ok := layoutNamed(t, colonName).Parse(c.colon)
+		if !ok || got.Nanos != want.Nanos {
+			t.Errorf("%s: instant %d, the colon form %q gives %d, %v", c.layout, got.Nanos, c.colon, want.Nanos, ok)
+		}
+	}
+}
+
+func TestWallNanosReportsAYearOutOfRange(t *testing.T) {
+	for _, y := range []int{1500, 2300} {
+		if n, ok := WallNanos(time.Date(y, 1, 1, 0, 0, 0, 0, time.UTC)); ok {
+			t.Errorf("WallNanos(year %d) = %d, true; want false", y, n)
+		}
+	}
+	got, ok := WallNanos(time.Date(2026, 11, 16, 8, 15, 22, 5, time.FixedZone("x", 2*3600)))
+	if want := time.Date(2026, 11, 16, 8, 15, 22, 5, time.UTC).UnixNano(); !ok || got != want {
+		t.Errorf("WallNanos(2026) = %d, %v; want %d, true", got, ok, want)
 	}
 }
