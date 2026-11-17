@@ -100,8 +100,9 @@ type Options struct {
 // DB is the database of one analysis run. It holds one connection for its
 // whole life, so the settings made on it hold for every statement. It is not
 // safe for concurrent use. After Close, AddSource, Append, ResolveYears,
-// FinishSource, MarkComplete and Records return ErrClosed; Path, Size, Close
-// and Remove still work.
+// FinishSource, MarkComplete, Records, WritePatterns, RecordTexts, Assign,
+// FinishMining, SourceInfos, MinerReport, PatternStats, SlotStats and
+// TimeBuckets return ErrClosed; Path, Size, Close and Remove still work.
 type DB struct {
 	path     string
 	lockPath string
