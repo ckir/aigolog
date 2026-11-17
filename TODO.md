@@ -37,4 +37,4 @@ Nothing here blocks a merged sub-project. Entries dated 2026-11-16.
 
 ## CI
 
-- [ ] CI never runs the cross-built `dist/` Windows binaries (`just build` runs on ubuntu only; the Windows runners use `go run`), never runs linux/arm64 natively, and never builds Go 1.26.0 (the `go.mod` floor; the workflow pins 1.27.4). The "Run the program" step asserts the exit status only. `.github/workflows/check.yml` (run on the first push; tick when the jobs are green: run id ...)
+- [ ] CI: the workflow was changed in B2a (part 1f of Task 1, Tasks 11 and 12a) to run linux/arm64 natively (`ubuntu-24.04-arm`), to build with Go 1.26.0, the `go.mod` floor, in a `floor` job, to run the built program on each machine, to fetch the sshd sample before the gate and to run a small `just measure-smoke` after it. None of this has run on a hosted machine yet. Tick when the jobs of the first push are green and the run id is in `docs/acceptance/b2a-patterns.md`; a job that fails on a Windows-only piece (the read-only URI of `openReadOnly`, the peak memory of `cmd/measure`, the `sh` of the fetch script) is shown to the owner, not worked around. `.github/workflows/check.yml`
