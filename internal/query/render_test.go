@@ -64,9 +64,13 @@ func TestRenderTextLeavesOutWhatTheFactsDoNotHold(t *testing.T) {
 	a := plainAnswer()
 	a.Facts = Facts{}
 	got := RenderText("A1", a)
-	for _, s := range []string{"rows covered", "first time", "last time", "span", "first:", "last:", "no time", "cut:", "times:"} {
+	// An answer about records of no rows still says how many it covers.
+	if !strings.Contains(got, "\nrows covered 0\n") {
+		t.Errorf("a zero-row count does not say rows covered 0:\n%s", got)
+	}
+	for _, s := range []string{"first time", "last time", "span", "first:", "last:", "no time", "cut:", "times:"} {
 		if strings.Contains(got, s) {
-			t.Errorf("a answer with no facts says %q:\n%s", s, got)
+			t.Errorf("an answer with no facts says %q:\n%s", s, got)
 		}
 	}
 	if !strings.HasSuffix(got, "answered in 4 ms\n") {
@@ -81,6 +85,32 @@ func TestRenderTextLeavesOutWhatTheFactsDoNotHold(t *testing.T) {
 	for _, s := range []string{"first time", "last time", "span", "times:"} {
 		if strings.Contains(got, s) {
 			t.Errorf("an answer with no times says %q:\n%s", s, got)
+		}
+	}
+}
+
+// TestRenderTextSaysRowsCoveredForTheVerbsThatCoverRecords: count, top, pairs,
+// buckets and rows say it always, also for none; patterns, slots and where never.
+func TestRenderTextSaysRowsCoveredForTheVerbsThatCoverRecords(t *testing.T) {
+	for _, verb := range []Verb{Count, Top, Pairs, Buckets, Rows} {
+		for _, n := range []int64{0, 7} {
+			a := plainAnswer()
+			a.Question.Verb = verb
+			a.Facts = Facts{Rows: n}
+			want := "\nrows covered " + string(rune('0'+n)) + "\n"
+			if got := RenderText("A1", a); !strings.Contains(got, want) {
+				t.Errorf("%s with %d rows: no %q in\n%s", verb, n, want, got)
+			}
+		}
+	}
+	for _, verb := range []Verb{Patterns, Slots, Where} {
+		for _, n := range []int64{0, 7} {
+			a := plainAnswer()
+			a.Question.Verb = verb
+			a.Facts = Facts{Rows: n}
+			if got := RenderText("A1", a); strings.Contains(got, "rows covered") {
+				t.Errorf("%s with %d rows says rows covered:\n%s", verb, n, got)
+			}
 		}
 	}
 }
@@ -101,9 +131,9 @@ func TestRenderTextCleansEveryCellAndTheQuestion(t *testing.T) {
 		}
 	}
 	lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
-	// header, question, column names, two rows, rows covered, answered in
-	if len(lines) != 7 {
-		t.Fatalf("%d lines, want 7:\n%q", len(lines), got)
+	// header, question, column names, two rows, answered in (where covers no set)
+	if len(lines) != 6 {
+		t.Fatalf("%d lines, want 6:\n%q", len(lines), got)
 	}
 	for i := 2; i <= 4; i++ {
 		if n := strings.Count(lines[i], "\t"); n != 1 {
