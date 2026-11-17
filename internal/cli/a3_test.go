@@ -304,10 +304,17 @@ func TestTheSshdSampleAnswersTheQuestionsOfA3(t *testing.T) {
 				for _, s := range f.addr {
 					inAddr[s] = true
 				}
+				inFailed := map[int64]bool{}
+				for _, p := range f.patterns {
+					inFailed[p.ID] = true
+				}
 				var found int64
 				for _, wr := range wh.Rows {
-					if inAddr[whole(t, cell(t, wh, wr, "slot"))] {
+					slot := whole(t, cell(t, wh, wr, "slot"))
+					if inAddr[slot] {
 						found += whole(t, cell(t, wh, wr, "rows"))
+					} else if inFailed[whole(t, cell(t, wh, wr, "pattern"))] {
+						t.Errorf("%s: where finds the address in slot %d of a Failed password pattern, which is not an addr slot (%v)", c.address, slot, wr)
 					}
 				}
 				if found != c.rows {

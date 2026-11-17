@@ -653,3 +653,70 @@ func TestQueryStopsWhenTheContextIsCancelled(t *testing.T) {
 		t.Errorf("something was stored:\n%s", shown)
 	}
 }
+
+func TestQueryAnswerOfAStoredQuestionThatCannotBeReadSaysSoAndStoresNothing(t *testing.T) {
+	h := newHarness(t)
+	path, _ := analysed(t, h, authLog)
+	for _, question := range []string{"this is not a question", `{"format":1,"verb":"nonsense"}`, `{"format":9,"verb":"count"}`} {
+		if _, err := store.SaveAnswer(context.Background(), path, question, "{}", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"A1", "A2", "A3"} {
+		code, out, errOut := h.run("query", "--db", path, "--answer", id)
+		if code != exitcode.Usage && code != exitcode.Failure {
+			t.Errorf("%s: code %d", id, code)
+		}
+		if out != "" || !strings.HasPrefix(errOut, "aigolog: the stored question of "+id+" cannot be read: ") {
+			t.Errorf("%s: code %d, stdout %q, stderr %q", id, code, out, errOut)
+		}
+	}
+	code, out, _ := h.run("show", "--db", path)
+	if code != exitcode.OK || !strings.Contains(out, "answers: 3 stored\n") {
+		t.Errorf("show: code %d, output:\n%s", code, out)
+	}
+}
+
+func TestQueryRunsTheBucketsVerbAndTheLastFlagOnADatabase(t *testing.T) {
+	h := newHarness(t)
+	path, _ := analysed(t, h, authLog)
+
+	// Four records over three seconds, in three buckets of one second.
+	b := ask(t, h, path, "--buckets", "3", "buckets")
+	wantBuckets := [][]string{
+		{"2026-01-05 10:00:01", "2026-01-05 10:00:02", "1"},
+		{"2026-01-05 10:00:02", "2026-01-05 10:00:03", "1"},
+		{"2026-01-05 10:00:03", "2026-01-05 10:00:04", "2"},
+	}
+	if !reflect.DeepEqual(b.Columns, []string{"start", "end", "rows"}) || !reflect.DeepEqual(b.Rows, wantBuckets) {
+		t.Errorf("buckets: columns %v, rows %v; want rows %v", b.Columns, b.Rows, wantBuckets)
+	}
+
+	// --last takes the newest records first: the ids 4 and 3, not 1 and 2.
+	first := ask(t, h, path, "rows", "--limit", "2")
+	last := ask(t, h, path, "rows", "--last", "--limit", "2")
+	ids := func(a query.Answer) []string {
+		var out []string
+		for _, r := range a.Rows {
+			out = append(out, r[0])
+		}
+		return out
+	}
+	if got := ids(first); !reflect.DeepEqual(got, []string{"1", "2"}) {
+		t.Errorf("rows --limit 2: ids %v, want [1 2]", got)
+	}
+	if got := ids(last); !reflect.DeepEqual(got, []string{"4", "3"}) {
+		t.Errorf("rows --last --limit 2: ids %v, want [4 3]", got)
+	}
+
+	// The text of the command shows the table and stores the answer.
+	code, out, errOut := h.run("query", "--db", path, "--buckets", "3", "buckets")
+	if code != exitcode.OK || errOut != "" ||
+		!strings.Contains(out, "start\tend\trows\n2026-01-05 10:00:01\t2026-01-05 10:00:02\t1\n") ||
+		!strings.Contains(out, "rows covered 4\n") {
+		t.Errorf("text: code %d, stderr %q, output:\n%s", code, errOut, out)
+	}
+	if code, out, _ := h.run("show", "--db", path); code != exitcode.OK || !strings.Contains(out, "answer A1: buckets\n") {
+		t.Errorf("show: code %d, output:\n%s", code, out)
+	}
+}

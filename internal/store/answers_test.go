@@ -290,3 +290,71 @@ func TestTwoSavesAtOnceNeverGiveTheSameID(t *testing.T) {
 		t.Errorf("Answers has %d rows, the saves gave %d ids", len(as), len(seen))
 	}
 }
+
+func TestAStoredAnswerWithATimeThatIsNotATimeIsAnErrorThatNamesIt(t *testing.T) {
+	for _, created := range []string{"not a time", "2026-01-16 10:15:30", ""} {
+		t.Run(created, func(t *testing.T) {
+			path := finishedPath(t)
+			raw, err := sql.Open(store.DriverName, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = raw.Exec(`INSERT INTO answers (id, question, answer, created) VALUES (7, 'q', 'a', ?)`, created)
+			raw.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			d, err := store.Open(bg, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer d.Close()
+			if a, err := d.Answer(bg, 7); err == nil || !strings.Contains(err.Error(), "stored answer 7") || !strings.Contains(err.Error(), "is not a time") {
+				t.Errorf("Answer(7) = %+v, %v; want an error that names the answer and its time", a, err)
+			}
+			if as, err := d.Answers(bg); err == nil || !strings.Contains(err.Error(), "is not a time") {
+				t.Errorf("Answers = %+v, %v; want an error", as, err)
+			}
+		})
+	}
+}
+
+// A path that the SQLite driver would misread is refused, also when the
+// database is there and has its lock file: nothing is stored.
+func TestSaveAnswerRefusesAPathTheDriverWouldMisread(t *testing.T) {
+	for _, c := range []struct {
+		name, base, want string
+		relative         bool
+	}{
+		{"question mark", "a?b.db", `contains "?"`, false},
+		{"file prefix", "file:x.db", `starts with "file:"`, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			path := finishedPath(t)
+			dir := t.TempDir()
+			moved := filepath.Join(dir, c.base)
+			if err := os.Rename(path, moved); err != nil {
+				t.Skipf("the system cannot name a file %q: %v", c.base, err)
+			}
+			if err := os.Rename(lockPathOf(path), lockPathOf(moved)); err != nil {
+				t.Skipf("the system cannot name a file %q: %v", lockPathOf(moved), err)
+			}
+			given := moved
+			if c.relative {
+				t.Chdir(dir)
+				given = c.base
+			}
+			id, err := store.SaveAnswer(bg, given, "q", "a", answerClock)
+			if err == nil || !strings.Contains(err.Error(), c.want) || errors.Is(err, store.ErrLocked) || errors.Is(err, store.ErrNoLock) {
+				t.Fatalf("SaveAnswer(%q) = %d, %v; want an error that says the path %s", given, id, err, c.want)
+			}
+			// Back under a name that is fine, the database holds nothing.
+			if err := os.Rename(moved, path); err != nil {
+				t.Fatal(err)
+			}
+			if as := stored(t, path); len(as) != 0 {
+				t.Errorf("a refused save stored %+v", as)
+			}
+		})
+	}
+}
