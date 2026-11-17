@@ -1,6 +1,6 @@
 # B2b: the questions, stored answers and `query`
 
-This record is written task by task. It holds, so far, the section of Task 1.
+This record is written task by task. It holds the sections of Task 1 (the caps), Task 6 (A2 and A3) and Task 7 (A6).
 
 ## The caps on the typed values of a token and of a message (Task 1)
 
@@ -21,3 +21,70 @@ Machine: linux/amd64, Go go1.27.4, 8 CPUs, program `aigolog 0.1.0-dev`. The load
 Beside the figures of B2a (`docs/acceptance/b2a-patterns.md`: 185,680 KiB for 100 clusters and 501,924 KiB for 300 clusters, a database 20.2 times its log, measured with `/usr/bin/time` on a shape of the same kind), the peak for 300 clusters falls to about a fifth of that, and the database is far below bar 4 (6 times): 2.14 times. The two shapes are not the same log (B2a's was measured with another generator), so the "before" column here, 17.6 times and about 435,000 KiB, is the one to compare with the "with the caps" column.
 
 One cost the caps have: a pattern shows at most 64 typed values of a long message, and later numbers stay as text in the pattern (plan, decision 7).
+
+## A2 and A3 through the query tools (Task 6)
+
+`TestTheSshdSampleAnswersTheQuestionsOfA3` (internal/cli/a3_test.go) carries the real 2,000-line sshd sample (LogHub, fetched, never committed) through `aigolog analyze` and asks the questions with `aigolog query`, from a file and from standard input. Every figure of design A3 came out on the first run: 520 failed-password lines; 23 addresses; 63 user names; the one accepted login at line 956; for 183.62.140.253, 286 attempts on 10 names (276 on `root`), first and last at lines 1,024 and 1,997; for 187.141.143.180, 80 attempts on 28 names. The columns are found through the command, not by number: `addr` is the `ip4` slots of the three patterns that hold `Failed password` and `names` the word slots that hold the user name in two of them (the third, `message repeated <int> times: [ Failed password for root ...]`, has the name in its text). `TestGeneratedLogsGiveTheirTruthThroughTheQueryTools` checks the truth of the generated ssh (3,000 lines), web (3,000) and restart logs (300 lines, seeds 1 and 2, so that the unit gives up in one of them) the same way.
+
+## The first measurement on the full OpenSSH log (A6, Task 7)
+
+The log is LogHub's OpenSSH log, fetched by `just fetch-openssh-full` from Zenodo record 8196385 (`SSH.tar.gz`, SHA-256 `296610a3...2712`, MD5 `a44e40b4348697dabf2bba56885e0a38` as the record states; the member `SSH.log` has the SHA-256 `89eee9e3...aa2f3`). It has 73,417,506 bytes, 655,146 newlines and a last line with no newline, so `aigolog` reads **655,147 records**: the design's 655,146 counts newlines (`wc -l`).
+
+Command: `just measure-full -runs 2` (that is `go run ./cmd/measure -log testdata/fetched/SSH_full.log -runs 2`), with the temporary folder on a disk-backed folder. Machine: linux/amd64, Go go1.27.4, 8 CPUs, program `aigolog 0.1.0-dev`. **Conditions, stated as they were:** the machine is shared with a test run of another project of the owner (a vitest run and a Postgres test database), which this record could not stop. The measurement waited for the machine to calm (the one-minute load average fell below 1.5 after 380 s) and started at load 1.37 (the command printed 1.90 3.13 3.85); it ended at 2.87 2.94 3.67. So the machine was quiet at the start and not controlled during the runs. Antivirus, indexing and updates were not looked at.
+
+| Figure (range of 2 runs) | the full log, 655,147 records |
+|---|---|
+| wall time | 69.35 s to 72.44 s |
+| CPU time (user and system) | 107.44 s to 112.27 s |
+| peak memory | 25.8 MiB to 28.4 MiB |
+| log size | 70.0 MiB |
+| database size | 234.7 MiB (3.35 times the log) |
+| patterns (cap 1,000) | 47 |
+| records in patterns seen once | 5 |
+| records in the catch-all | 0 |
+
+A third run, `aigolog analyze --as-of 2026-12-31` under `/usr/bin/time -v` (kept database, one run, load 2.87 to 4.03): wall 1:15.59, user 95.38 s, system 19.31 s, peak 31,304 KiB. The peak memory is the same size as for the generated log of B2a (31.8 to 38.7 MiB at 655,146 lines; 26.6 to 41.4 MiB at 100,000), so it does not grow with the input; the database is 3.35 times its log against the bar of 6 times. The figures are for this machine and are a ceiling, not a figure to compare with another machine.
+
+### The questions over the whole log
+
+Asked with `aigolog query` on the kept database (each answer stored; the time is the one the answer prints, `answered in N ms`; **the load during these was 5 to 6 from the other project**, so they are contended). The failed-password patterns are 10, 11, 6 and 41 (197,587 records); `addr` is their four `ip4` slots, `names` their three word slots.
+
+| Question | rows covered | cut | time |
+|---|---|---|---|
+| 3 `count` of the four patterns | 197,587 | no | 680 ms |
+| 4 `top --by addr` (1,008 addresses) | 197,587 | rows | 2,608 ms |
+| 4 `top --by names` (1,745 names) | 197,587 | rows | 2,195 ms |
+| **5 `pairs --by addr --with names`** (the names tried per address) | 197,587 | rows | **3,468 ms** |
+| 6 `buckets` (24) | 197,587 | no | 1,068 ms |
+| 7 `rows --last --limit 10` | 655,147 | rows | 547 ms |
+| 8 `where 59.63.188.30` (the busiest address; in 3 slots) | | no | 142 ms |
+| `top --by names --where addr=59.63.188.30` | 28,766 | no | 3,859 ms |
+| `count --where addr=59.63.188.30` | 28,766 | no | 944 ms |
+
+Question 5 answered over the whole log in 3.5 s, within the provisional limit of 5 s, but with a margin of 1.4 times on a contended machine: a slower machine will need `--timeout`. The limits (100 rows, 64 KiB, 5 s) were **not changed**; whether to raise the time limit (about 15 s would be four times the slowest measured answer) is the owner's decision.
+
+### Spot-check against standard tools
+
+| Figure | `aigolog query` | standard tools |
+|---|---|---|
+| lines with `Failed password` | 197,587 (the four patterns) | `grep -c 'Failed password'`: 197,587 |
+| distinct addresses in them | 1,008 | `grep -oE 'from [0-9.]+ port' \| sort -u \| wc -l`: 1,008 |
+| distinct user names | 1,745 | `sed -nE 's/.*Failed password for (invalid user )?([^ ]+) from ...' \| sort -u \| wc -l`: 1,745 |
+| lines on `root` | 176,784 | `grep -cE 'Failed password for root from'`: 176,784 |
+| busiest address 59.63.188.30: lines | 28,766 | `grep ... from 59\.63\.188\.30 port`: 28,766 |
+| its first and last line | 491,470 and 638,997 | `grep -n`: 491,470 and 638,997 |
+| its distinct names | 1 (`root`) | 1 |
+| `Accepted ` lines | 182 (one pattern) | `grep -c 'Accepted '`: 182 |
+| records | 655,147 | 655,146 newlines plus one last line with no newline |
+
+All equal. (The four records of pattern 41, `Failed password for invalid user from <ip4>`, have no name; they are in the 197,587 and in the 1,008 addresses and not in the names.)
+
+### Findings the real log showed (for the owner)
+
+1. **The time of the log is placed in a span of two years.** The summary says `time: 2024-12-10 06:55:46 to 2026-01-07 17:22:01; as written, no zone stated`, and its time buckets are almost all empty, for a log that holds only the days Dec 10 to 12 and Jan 1 to 7. The stamps have no year, and `--as-of 2026-12-31` was given. The rule of B1 (`internal/timeparse/years.go`) gives each record the latest year that does not put it after the next record plus one day. This log has 8 steps backwards in its stamps; the one at line 421,064 goes back by one day and three minutes (Jan 2 22:41:30, then Jan 1 22:38:31), which is more than the day of slack, so every record before it is moved one year back, and the December days land in 2024. The log is not wrong; the rule has no room for a disorder of more than a day. This is B1 behaviour exposed by the first real long log; it does not touch any figure above. It is recorded in `TODO.md`.
+2. **655,146 or 655,147 lines.** The log has a last line with no newline; the figure of the design counts newlines (see above).
+3. **The margin of question 5** is 1.4 times (above).
+
+### What these runs do not show
+
+A Windows or ARM64 measurement of the full log; a cold file cache; an idle machine (the load was 1.4 at the start and 2.9 to 6 later, from another project); the memory of `aigolog query` (not measured); the cost of the three statements that `top` and `pairs` run over the same record set (it is why `top` takes 2 to 4 s; a later change may share them).

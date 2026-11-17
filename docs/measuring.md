@@ -63,7 +63,7 @@ just measure-full         # measure -log testdata/fetched/SSH_full.log, two runs
 ```
 
 - `just fetch-openssh-full` downloads the log from Zenodo (an archive of about 4.4 MiB, 655,146 lines and about 70 MiB unpacked) and checks it against checksums that are fixed in `scripts/ci/fetch-openssh-full.sh`. It extracts only the one file it expects, and a file that is already there with the right checksum is left alone. The log is fetched, never committed: LogHub's terms do not allow it in this repository, and `testdata/fetched/` is git-ignored.
-- `just measure-full` runs `measure -log` on that file. `measure` reads the file where it is and does not copy it, so the "log size" figure is the size of that file; the report says `log: <path>, <N> lines`. `-runs`, `-bin`, `-keep` and `-json` work as for a generated log. It takes a few minutes, since each run analyzes the whole file.
+- `just measure-full` runs `measure -log` on that file. `measure` reads the file where it is and does not copy it, so the "log size" figure is the size of that file; the report says `log: <path>, <N> lines`. `-runs`, `-bin`, `-keep` and `-json` work as for a generated log. Each run analyzes the whole file (about 70 seconds each on the machine of the acceptance record, `docs/acceptance/b2b-questions.md`, which was not idle; yours will differ).
 - A result is quoted as described in [How to quote a result](#how-to-quote-a-result): the range of two runs, the machine facts, and the sentence that the load was not controlled.
 - The time of a question comes from the program, not from `measure`: keep the database (`aigolog analyze` without `--no-keep`), then ask on it with `aigolog query`, which prints `answered in N ms` for a stored answer.
 
@@ -87,7 +87,7 @@ With two runs or more each figure is a range, `low to high`. With one run it is 
 - Quote the range of two or more runs, never a single run.
 - Quote the machine facts the report prints: operating system and architecture, Go version, number of CPUs, program version.
 - Say that the background load of the machine was not controlled, and quote the load averages if the report has them.
-- Say which kind, lines and seed you used.
+- Say which kind, lines and seed you used, or, for `-log`, which file (and its SHA-256).
 - Do not compare figures from different machines as if they measured the same thing.
 
 ## The bars of the acceptance record (A6) and the rule
