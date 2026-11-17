@@ -228,7 +228,7 @@ func TestASweepThatRemovesAnUnfinishedDatabaseSaysSo(t *testing.T) {
 	if code != exitcode.OK {
 		t.Fatalf("second run: code %d, stderr %q", code, errOut)
 	}
-	if want := "aigolog: note: removed 1 databases that were not finished\n"; !strings.Contains(errOut, want) {
+	if want := "aigolog: note: removed 1 database that was not finished\n"; !strings.Contains(errOut, want) {
 		t.Errorf("standard error %q does not hold %q", errOut, want)
 	}
 	if _, err := os.Stat(first); !os.IsNotExist(err) || dbCount(t, h.cache) != 1 {
@@ -985,7 +985,7 @@ func TestNoKeepStillPrintsTheDigestAndSaysTheDatabaseWasRemoved(t *testing.T) {
 	if code != exitcode.OK || errOut != "" {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
-	for _, want := range []string{"\npatterns\ndigest: 20 records, 1 patterns\n", "[S3] patterns", "database: removed at the end of the run (--no-keep)"} {
+	for _, want := range []string{"\npatterns\ndigest: 20 records, 1 pattern\n", "[S3] patterns", "database: removed at the end of the run (--no-keep)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
@@ -1135,5 +1135,132 @@ func TestAJSONReportThatCannotBeWrittenExitsWithOneAndSaysSo(t *testing.T) {
 	}, []string{"analyze", "--json", h.file("a.log", reportLog(5))})
 	if code != exitcode.Failure || !strings.Contains(e.String(), "aigolog: the report could not be written: ") {
 		t.Errorf("code %d, stderr %q", code, e.String())
+	}
+}
+
+// markOf changes the database at path with the statements, as a test of the
+// sweep needs a database that is not what a run leaves.
+func markOf(t *testing.T, path string, statements ...string) {
+	t.Helper()
+	db, err := sql.Open(store.DriverName, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range statements {
+		if _, err = db.Exec(q); err != nil {
+			break
+		}
+	}
+	if cerr := db.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestASweepThatRemovesAnAgedOutDatabaseOfAnotherLayoutSaysNothingOfUnfinished(t *testing.T) {
+	h := newHarness(t)
+	h.now = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	p := h.file("a.log", "x\n")
+	code, out, errOut := h.run("analyze", p)
+	if code != exitcode.OK || errOut != "" {
+		t.Fatalf("first run: code %d, stderr %q", code, errOut)
+	}
+	first := regexp.MustCompile(`(?m)^database: (.+\.db) \(`).FindStringSubmatch(out)[1]
+	// A finished database of layout 1, the one of B1: the sweep calls it other.
+	markOf(t, first, `PRAGMA user_version = 1`)
+	h.now = h.now.Add(8 * 24 * time.Hour)
+	code, _, errOut = h.run("analyze", p)
+	if code != exitcode.OK || errOut != "" {
+		t.Errorf("second run: code %d, stderr %q; an aged-out database of another layout goes with no note", code, errOut)
+	}
+	if _, err := os.Stat(first); !os.IsNotExist(err) || dbCount(t, h.cache) != 1 {
+		t.Errorf("the old database: %v; databases %d; want it gone and the new one left", err, dbCount(t, h.cache))
+	}
+}
+
+func TestTheNoteOfASweepSaysDatabaseOrDatabasesByTheNumberRemoved(t *testing.T) {
+	h := newHarness(t)
+	p := h.file("a.log", "x\n")
+	var paths []string
+	for i := 0; i < 2; i++ {
+		h.now = h.now.Add(time.Minute) // another name for each database
+		code, out, errOut := h.run("analyze", p)
+		if code != exitcode.OK || errOut != "" {
+			t.Fatalf("run %d: code %d, stderr %q", i, code, errOut)
+		}
+		paths = append(paths, regexp.MustCompile(`(?m)^database: (.+\.db) \(`).FindStringSubmatch(out)[1])
+	}
+	for _, path := range paths {
+		markOf(t, path, `UPDATE meta SET value = '0' WHERE key = 'complete'`)
+	}
+	h.now = h.now.Add(time.Minute)
+	code, _, errOut := h.run("analyze", p)
+	if code != exitcode.OK {
+		t.Fatalf("third run: code %d, stderr %q", code, errOut)
+	}
+	if want := "aigolog: note: removed 2 databases that were not finished\n"; !strings.Contains(errOut, want) {
+		t.Errorf("standard error %q does not hold %q", errOut, want)
+	}
+}
+
+func TestTheNoteOfASweepCountsAFileThatIsNotADatabaseAsNotFinished(t *testing.T) {
+	h := newHarness(t)
+	p := h.file("a.log", "x\n")
+	code, out, errOut := h.run("analyze", p)
+	if code != exitcode.OK || errOut != "" {
+		t.Fatalf("first run: code %d, stderr %q", code, errOut)
+	}
+	first := regexp.MustCompile(`(?m)^database: (.+\.db) \(`).FindStringSubmatch(out)[1]
+	if err := os.WriteFile(first, []byte(strings.Repeat("this is text and not a database\n", 20)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.now = h.now.Add(time.Minute)
+	code, _, errOut = h.run("analyze", p)
+	if code != exitcode.OK {
+		t.Fatalf("second run: code %d, stderr %q", code, errOut)
+	}
+	if want := "aigolog: note: removed 1 database that was not finished\n"; !strings.Contains(errOut, want) {
+		t.Errorf("standard error %q does not hold %q", errOut, want)
+	}
+}
+
+// runWithStdout is run with the standard output given.
+func (h *harness) runWithStdout(stdout io.Writer, args ...string) (code int, errOut string) {
+	h.t.Helper()
+	var e bytes.Buffer
+	vars := map[string]string{"AIGOLOG_CACHE_DIR": h.cache, "AIGOLOG_CONFIG": filepath.Join(h.cache, "no-config.json")}
+	code = RunEnv(Env{
+		Stdout:    stdout,
+		Stderr:    &e,
+		LookupEnv: func(k string) (string, bool) { v, ok := vars[k]; return v, ok },
+		Now:       func() time.Time { return h.now },
+		Zone:      time.UTC,
+	}, args)
+	return code, e.String()
+}
+
+func TestATextReportThatCannotBeWrittenExitsWithOneAndSaysSoAndTheDatabaseIsHandledAsBefore(t *testing.T) {
+	h := newHarness(t)
+	code, errOut := h.runWithStdout(failingWriter{}, "analyze", h.file("a.log", reportLog(5)))
+	if code != exitcode.Failure || !strings.Contains(errOut, "aigolog: the report could not be written: write failed\n") {
+		t.Errorf("code %d, stderr %q", code, errOut)
+	}
+	if dbCount(t, h.cache) != 1 {
+		t.Errorf("databases %d; the database of a run is kept when the report could not be written", dbCount(t, h.cache))
+	}
+	h2 := newHarness(t)
+	code, errOut = h2.runWithStdout(failingWriter{}, "analyze", "--no-keep", h2.file("a.log", reportLog(5)))
+	if code != exitcode.Failure || !strings.Contains(errOut, "aigolog: the report could not be written: write failed\n") {
+		t.Errorf("--no-keep: code %d, stderr %q", code, errOut)
+	}
+	if dbCount(t, h2.cache) != 0 {
+		t.Errorf("--no-keep: databases %d; want it removed as always", dbCount(t, h2.cache))
+	}
+	// A write that works still gives exit 0.
+	h3 := newHarness(t)
+	if code, errOut = h3.runWithStdout(&bytes.Buffer{}, "analyze", h3.file("a.log", reportLog(5))); code != exitcode.OK || errOut != "" {
+		t.Errorf("a working writer: code %d, stderr %q", code, errOut)
 	}
 }

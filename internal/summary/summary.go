@@ -274,7 +274,9 @@ func (b *builder) addPatterns(visible []store.PatternStat) int {
 	ok := func(k int) bool {
 		om := restAfter(k)
 		cand := b.with(blockFor(k))
-		own := Render(Summary{Blocks: cand[len(cand)-1:], Omitted: om})
+		// The block alone is measured as if its times named the zone, which
+		// is the longest it can be.
+		own := render(Summary{Blocks: cand[len(cand)-1:], Omitted: om}, true)
 		if int64(len(own))*100 > int64(b.budget)*patternsShare {
 			return false
 		}

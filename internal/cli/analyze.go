@@ -7,6 +7,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -287,15 +288,22 @@ func analyze(env Env, args []string) int {
 	for _, e := range splitErrors(err) {
 		warn(env.Stderr, e)
 	}
+	// The note is about databases that were not finished: a run that did not
+	// finish ("incomplete"), and a file that is not a database of ours or has
+	// no readable header ("unreadable": a file that has our raw header and that
+	// SQLite calls corrupt is kept as unreadable, and is not removed). A
+	// complete database and one of another layout ("other") that goes by age or
+	// by the size limit is not an unfinished one, and the note does not name it.
 	unfinished := 0
 	for _, r := range swept.Removed {
-		if r.State != "complete" {
+		if r.State == "incomplete" || r.State == "unreadable" {
 			unfinished++
 		}
 	}
-	if unfinished > 0 {
-		// A database that is cut short but was finished is judged not to be
-		// ours and goes with the others; the owner can see it go.
+	switch {
+	case unfinished == 1:
+		report(env.Stderr, "note: removed 1 database that was not finished")
+	case unfinished > 1:
 		report(env.Stderr, fmt.Sprintf("note: removed %d databases that were not finished", unfinished))
 	}
 	unreadable := 0
@@ -396,10 +404,17 @@ func analyze(env Env, args []string) int {
 			code = exitcode.Failure
 		}
 	} else {
-		printSources(env.Stdout, res)
-		reports.WriteDigest(env.Stdout, dig)
-		reports.WriteSummary(env.Stdout, sum)
-		printDatabase(env.Stdout, db.Path(), size, kept, cfg.KeepDays)
+		// The text is made whole and written once, as the JSON is, so that a
+		// write that fails is known and said.
+		var text bytes.Buffer
+		printSources(&text, res)
+		reports.WriteDigest(&text, dig)
+		reports.WriteSummary(&text, sum)
+		printDatabase(&text, db.Path(), size, kept, cfg.KeepDays)
+		if _, err := env.Stdout.Write(text.Bytes()); err != nil {
+			report(env.Stderr, "the report could not be written: "+err.Error())
+			code = exitcode.Failure
+		}
 	}
 	if kept && !a.noKeep && size > cfg.MaxTotalBytes {
 		// The summary says how long the database is kept, but the size limit

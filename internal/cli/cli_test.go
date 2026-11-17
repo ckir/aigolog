@@ -174,7 +174,7 @@ Usage:
   aigolog <command> [arguments]
 
 Commands:
-  analyze   read logs into a database and say what was read
+  analyze   read logs into a database, find the patterns in them and print what was found
   list      show the kept databases
   clean     remove the kept databases that no run is using
   version   print the version of the program and of its parts

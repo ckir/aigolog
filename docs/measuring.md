@@ -59,7 +59,7 @@ Exit codes: 0 when it measured (whether or not the bars are met), 1 when a run f
 - **records**: how many records the database holds.
 - **patterns**: how many patterns the miner made (the catch-all is not one).
 - **seen once**: records in patterns that hold exactly one record. A high share means the log is mostly different lines.
-- **catch-all**: records that match no pattern (this happens only past the cap on the number of patterns).
+- **catch-all**: records that no pattern fits. That happens past the cap on the number of patterns, and for a record that has nothing but a time stamp (no tokens to make a pattern of). The summary says how many records the patterns hold as the records less the catch-all's.
 
 With two runs or more each figure is a range, `low to high`. With one run it is one value, which is not a result: it cannot show how much the figure varies.
 

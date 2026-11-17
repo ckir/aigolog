@@ -11,7 +11,7 @@ Written: 2026-11-15, by an agent session on the owner's Linux machine, in the co
 this file on top of `5e00016`.
 
 Why that session could not do this itself (measured there): the machine runs
-`Linux 7.0.0-43-generic x86_64`; it has no `wevtutil`, no Wine and no virtual machine support, and
+`Linux x86_64`; it has no `wevtutil`, no Wine and no virtual machine support, and
 the Windows Event Log exists only on Windows.
 
 What it is for: aigolog will read the Windows Event Log (design section 7.1 in

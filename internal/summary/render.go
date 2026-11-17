@@ -82,12 +82,56 @@ func stamp(nanos int64) string {
 	return time.Unix(0, nanos).UTC().Format(stampLayout)
 }
 
-// span writes the first and the last time of something, in UTC.
-func span(first, last int64) string {
-	return stamp(first) + " to " + stamp(last) + " UTC"
+// plural returns the noun for a count: one for 1, many for any other number
+// ("1 record", "2 records", "0 records"). A noun is written with its count, so
+// a line says "1 record", never "1 records".
+func plural(n int64, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
-// humanBytes writes a size with a binary unit; it is at most 8 bytes for an int64.
+// zoneWord is what follows a time that is known to be in UTC.
+const zoneWord = " UTC"
+
+// span writes the first and the last time of something; utc says whether the
+// times are known to be in UTC (see allExact), in which case the zone is named.
+// A time with no stated zone is shown as it was written, with no zone word.
+func span(first, last int64, utc bool) string {
+	s := stamp(first) + " to " + stamp(last)
+	if utc {
+		s += zoneWord
+	}
+	return s
+}
+
+// allExact reports whether the summary may name the zone of the times of
+// records that come from any source: it has sources with times, and every one
+// of them states its zone (store.TimeExact, a time converted to UTC). A source
+// with no time does not matter. A summary with no sources block has no source
+// to say, so no zone is named.
+func allExact(blocks []Block) bool {
+	found := false
+	for _, blk := range blocks {
+		if blk.Kind != "sources" {
+			continue
+		}
+		for _, s := range blk.Sources {
+			if !s.HasTimes {
+				continue
+			}
+			if s.TimeKind != store.TimeExact {
+				return false
+			}
+			found = true
+		}
+	}
+	return found
+}
+
+// humanBytes writes a size with a binary unit; it is at most 10 bytes for an
+// int64 ("1023.9 KiB", or "1024.0 KiB" when the rounding reaches it).
 func humanBytes(n int64) string {
 	if n < 1024 {
 		return strconv.FormatInt(n, 10) + " B"
@@ -114,10 +158,20 @@ func number(f float64) string {
 }
 
 // Render writes the summary as plain text: for each block a heading such as
-// [S1] sources and its lines, blocks separated by one blank line. Times are in
-// UTC. A render that is empty has no blocks. No line is longer than 400 bytes
-// and no byte below 0x20 other than the line feed is written.
+// [S1] sources and its lines, blocks separated by one blank line. No time zone
+// is assumed or converted: a time is shown as the log wrote it, and the word UTC
+// follows a time only where the log states its zone (the source is
+// store.TimeExact): in the line of such a source, and in the lines of patterns,
+// slots and time blocks only when every source with times is of that kind. A
+// render that is empty has no blocks. No line is longer than 400 bytes and no
+// byte below 0x20 other than the line feed is written.
 func Render(s Summary) string {
+	return render(s, allExact(s.Blocks))
+}
+
+// render is Render with the decision about the zone made: utc says that the
+// times of patterns, slots and time blocks are named as UTC.
+func render(s Summary, utc bool) string {
 	var b strings.Builder
 	for i, blk := range s.Blocks {
 		if i > 0 {
@@ -131,15 +185,16 @@ func Render(s Summary) string {
 			renderMiner(&b, blk.Miner)
 		case "patterns":
 			for _, p := range blk.Patterns {
-				fmt.Fprintf(&b, "  %s\n", patternLine(p))
+				fmt.Fprintf(&b, "  %s\n", patternLine(p, utc))
 			}
 			if s.Omitted.Patterns > 0 {
-				fmt.Fprintf(&b, "not listed: %d more patterns (%d records)\n", s.Omitted.Patterns, s.Omitted.Records)
+				fmt.Fprintf(&b, "not listed: %d more %s (%d %s)\n", s.Omitted.Patterns, plural(int64(s.Omitted.Patterns), "pattern", "patterns"),
+					s.Omitted.Records, plural(s.Omitted.Records, "record", "records"))
 			}
 		case "slots":
 			renderSlots(&b, blk)
 		case "time":
-			renderTime(&b, blk)
+			renderTime(&b, blk, utc)
 		}
 	}
 	return b.String()
@@ -151,10 +206,23 @@ func Render(s Summary) string {
 func sourceLine(s store.SourceInfo) string {
 	rest := fmt.Sprintf(": %d rec, %s, %s timed", s.Records, humanBytes(s.Bytes), pct(ratio(s.WithTime, s.Records)))
 	if s.HasTimes {
-		rest += ", " + stamp(s.FirstNanos) + ".." + stamp(s.LastNanos) + " UTC"
+		rest += ", " + stamp(s.FirstNanos) + ".." + stamp(s.LastNanos)
+		if s.TimeKind == store.TimeExact {
+			rest += zoneWord
+		}
+	}
+	name := s.Name
+	if name == "-" {
+		// The stored name stays; the report of analyze says it the same way.
+		name = "standard input"
 	}
 	room := sourceLineBytes - 2 - len(rest) - 3 // the indent, and the dots of a cut name
-	return "  " + shown(s.Name, max(0, min(sourceNameBytes, room))) + rest
+	if room < 0 {
+		// The numbers alone take the line (only for counts of 19 digits): the
+		// name is left out, because a cut name still takes its three dots.
+		return "  " + rest[len(": "):]
+	}
+	return "  " + shown(name, min(sourceNameBytes, room)) + rest
 }
 
 func renderSources(b *strings.Builder, srcs []store.SourceInfo) {
@@ -168,7 +236,7 @@ func renderSources(b *strings.Builder, srcs []store.SourceInfo) {
 			for _, r := range srcs[maxSources:] {
 				records += r.Records
 			}
-			fmt.Fprintf(b, "  not listed: %d more sources (%d records)\n", len(srcs)-maxSources, records)
+			fmt.Fprintf(b, "  not listed: %d more %s (%d %s)\n", len(srcs)-maxSources, plural(int64(len(srcs)-maxSources), "source", "sources"), records, plural(records, "record", "records"))
 			break
 		}
 		b.WriteString(sourceLine(s))
@@ -184,22 +252,30 @@ func renderMiner(b *strings.Builder, m *store.MinerReport) {
 		b.WriteString("  no patterns were mined\n")
 		return
 	}
-	fmt.Fprintf(b, "  %d patterns hold %d records\n", m.Patterns, m.Records)
-	fmt.Fprintf(b, "  seen once: %d patterns (%s of records)\n", m.SeenOnce, pct(ratio(m.SeenOnce, m.Records)))
-	fmt.Fprintf(b, "  catch-all: %d records (%s of records)\n", m.CatchAll, pct(ratio(m.CatchAll, m.Records)))
+	// The patterns hold the records that the catch-all does not: a record that
+	// no pattern fits (past the cap, or with nothing but a time stamp) is
+	// in the catch-all, which is not one of the m.Patterns.
+	held := m.Records - m.CatchAll
+	verb := "hold"
+	if m.Patterns == 1 {
+		verb = "holds"
+	}
+	fmt.Fprintf(b, "  %d %s %s %d %s\n", m.Patterns, plural(int64(m.Patterns), "pattern", "patterns"), verb, held, plural(held, "record", "records"))
+	fmt.Fprintf(b, "  seen once: %d %s (%s of records)\n", m.SeenOnce, plural(m.SeenOnce, "pattern", "patterns"), pct(ratio(m.SeenOnce, m.Records)))
+	fmt.Fprintf(b, "  catch-all: %d %s (%s of records)\n", m.CatchAll, plural(m.CatchAll, "record", "records"), pct(ratio(m.CatchAll, m.Records)))
 }
 
 // patternLine is one pattern: id, records, share, first and last time, text.
-func patternLine(p store.PatternStat) string {
+func patternLine(p store.PatternStat, utc bool) string {
 	id := fmt.Sprintf("p%d", p.ID)
 	if p.CatchAll {
 		id += " (catch-all)"
 	}
 	when := "no time"
 	if p.HasTimes {
-		when = span(p.FirstNanos, p.LastNanos)
+		when = span(p.FirstNanos, p.LastNanos, utc)
 	}
-	return fmt.Sprintf("%s  %d records (%s)  %s  %s", id, p.Records, pct(p.Share), when, shown(p.Text, textBytes))
+	return fmt.Sprintf("%s  %d %s (%s)  %s  %s", id, p.Records, plural(p.Records, "record", "records"), pct(p.Share), when, shown(p.Text, textBytes))
 }
 
 // patternHead is the line that names the pattern a block is about.
@@ -213,7 +289,7 @@ func patternHead(blk Block) string {
 func renderSlots(b *strings.Builder, blk Block) {
 	b.WriteString(patternHead(blk))
 	for _, s := range blk.Slots {
-		fmt.Fprintf(b, "  slot %d (%s): %d values, %d distinct", s.Pos, shown(s.Type, 16), s.Total, s.Distinct)
+		fmt.Fprintf(b, "  slot %d (%s): %d %s, %d distinct", s.Pos, shown(s.Type, 16), s.Total, plural(s.Total, "value", "values"), s.Distinct)
 		if s.Numeric && s.Total > 0 {
 			fmt.Fprintf(b, ", range %s to %s", number(s.Min), number(s.Max))
 		}
@@ -224,11 +300,15 @@ func renderSlots(b *strings.Builder, blk Block) {
 	}
 }
 
-func renderTime(b *strings.Builder, blk Block) {
+func renderTime(b *strings.Builder, blk Block, utc bool) {
+	zone := "times as written in the log (no zone is assumed)"
+	if utc {
+		zone = "times in UTC"
+	}
 	if blk.Pattern < 0 {
-		b.WriteString("  all records, times in UTC\n")
+		b.WriteString("  all records, " + zone + "\n")
 	} else {
-		b.WriteString(strings.TrimSuffix(patternHead(blk), "\n") + ", times in UTC\n")
+		b.WriteString(strings.TrimSuffix(patternHead(blk), "\n") + ", " + zone + "\n")
 	}
 	for _, k := range blk.Buckets {
 		fmt.Fprintf(b, "  %s to %s  %d\n", stamp(k.StartNanos), stamp(k.EndNanos), k.Count)
@@ -239,13 +319,13 @@ func renderTime(b *strings.Builder, blk Block) {
 // pattern counts, then one line for each group in order.
 func RenderDigest(d Digest) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "digest: %d records, %d patterns\n", d.Records, d.Patterns)
+	fmt.Fprintf(&b, "digest: %d %s, %d %s\n", d.Records, plural(d.Records, "record", "records"), d.Patterns, plural(int64(d.Patterns), "pattern", "patterns"))
 	for i, g := range d.Groups {
 		id := fmt.Sprintf("p%d", g.ID)
 		if g.CatchAll {
 			id += " (catch-all)"
 		}
-		fmt.Fprintf(&b, "  %d. %s  %d records (%s)  %s\n", i+1, id, g.Records, pct(g.Share), shown(g.Text, textBytes))
+		fmt.Fprintf(&b, "  %d. %s  %d %s (%s)  %s\n", i+1, id, g.Records, plural(g.Records, "record", "records"), pct(g.Share), shown(g.Text, textBytes))
 	}
 	return b.String()
 }

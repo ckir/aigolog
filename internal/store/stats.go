@@ -70,7 +70,12 @@ ORDER BY s.id`, int(record.Resolved))
 	return out, nil
 }
 
-// MinerReport says how well the patterns hold the records.
+// MinerReport says how well the patterns hold the records. The records that the
+// mined patterns hold are Records less CatchAll. A record goes to the catch-all
+// when no pattern fits it: past the cap on the number of patterns, and a record
+// with no token after its time stamp (it has no tokens to fit to a pattern). On
+// a database made with no miner, records.pattern is 0 for every record (its
+// default), so CatchAll equals Records and Patterns is 0.
 type MinerReport struct {
 	// Patterns is the number of mined patterns; the catch-all is not one.
 	Patterns int `json:"patterns"`
@@ -79,7 +84,7 @@ type MinerReport struct {
 	// SeenOnce is the number of records in mined patterns that hold exactly one
 	// record (the catch-all is not a mined pattern).
 	SeenOnce int64 `json:"seen_once"`
-	// CatchAll is the number of records of pattern 0.
+	// CatchAll is the number of records of pattern 0, the catch-all.
 	CatchAll int64 `json:"catch_all"`
 }
 

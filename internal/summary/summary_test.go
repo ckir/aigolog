@@ -232,7 +232,7 @@ func TestAllPatternsAreListedWhenTheyFitAndASingleLineIsOneOfThem(t *testing.T) 
 	}
 	found := false
 	for _, l := range strings.Split(out, "\n") {
-		if strings.Contains(l, "gamma") && strings.Contains(l, " 1 records") {
+		if strings.Contains(l, "gamma") && strings.Contains(l, " 1 record ") {
 			found = true
 		}
 	}
@@ -467,8 +467,9 @@ func TestHostileValuesAreEscapedAndCut(t *testing.T) {
 		}
 	}
 	out := Render(s)
-	// The source name is escaped and cut to the room of its 100-byte line.
-	if !strings.Contains(out, "  evil\\x1b[2J\\x0a$(r...: 90 rec") {
+	// The source name is escaped and cut to the room of its 100-byte line (the
+	// line of a source with no stated zone has no " UTC", so it has 4 bytes more).
+	if !strings.Contains(out, "  evil\\x1b[2J\\x0a$(reboo...: 90 rec") {
 		t.Errorf("the source name is not shown escaped and cut:\n%s", out)
 	}
 	if !strings.Contains(out, strings.Repeat("A", 120)+"...") {
@@ -526,12 +527,16 @@ func TestTheSourceBlockStatesTheShareOfRecordsWithATime(t *testing.T) {
 			bareLine = l
 		}
 	}
-	// 10 of 11 records have a time; the times are UTC, and the first and the
+	// 10 of 11 records have a time; the log states no zone, so the times are
+	// shown as written (design 7.2: no zone is assumed), and the first and the
 	// last are those of the first and last stamped line.
-	for _, want := range []string{"11 rec", "90.9% timed", "2026-01-05 10:00:00..2026-01-05 10:00:27 UTC"} {
+	for _, want := range []string{"11 rec", "90.9% timed", "2026-01-05 10:00:00..2026-01-05 10:00:27"} {
 		if !strings.Contains(stampedLine, want) {
 			t.Errorf("stamped line %q lacks %q", stampedLine, want)
 		}
+	}
+	if strings.Contains(stampedLine, "UTC") {
+		t.Errorf("stamped line %q names a zone the log does not state", stampedLine)
 	}
 	if !strings.Contains(bareLine, "2 rec") || !strings.Contains(bareLine, "0.0% timed") || strings.Contains(bareLine, "UTC") {
 		t.Errorf("bare line %q: want 2 records, 0.0%% timed and no span", bareLine)
@@ -563,7 +568,8 @@ func TestTheMinerBlockStatesPatternsSeenOnceAndCatchAllShares(t *testing.T) {
 		t.Fatalf("miner block = %+v", mb.Miner)
 	}
 	out := Render(Summary{Blocks: []Block{mb}})
-	for _, want := range []string{"2 patterns hold 8 records", "seen once: 1 patterns (12.5% of records)", "catch-all: 3 records (37.5% of records)"} {
+	// The patterns hold what the catch-all does not: 8 records less 3.
+	for _, want := range []string{"2 patterns hold 5 records", "seen once: 1 pattern (12.5% of records)", "catch-all: 3 records (37.5% of records)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("miner block lacks %q:\n%s", want, out)
 		}
@@ -849,5 +855,212 @@ func TestEveryPatternWithNoRecordIsNeitherListedNorCounted(t *testing.T) {
 	got := withRecords(ps)
 	if len(got) != 2 || got[0].ID != 1 || got[1].ID != 3 {
 		t.Errorf("withRecords = %+v", got)
+	}
+}
+
+// renderLines splits the render in the lines that name a time of a pattern (the
+// lines of a pattern in the patterns block), the sources block and the heads of
+// the time blocks.
+func renderLines(out string) (sourceLines, patternLines, timeHeads []string) {
+	for _, l := range strings.Split(out, "\n") {
+		switch {
+		case strings.Contains(l, " rec, "):
+			sourceLines = append(sourceLines, l)
+		case regexp.MustCompile(`^  p[0-9]+( \(catch-all\))?  `).MatchString(l):
+			patternLines = append(patternLines, l)
+		case strings.Contains(l, "times "):
+			timeHeads = append(timeHeads, l)
+		}
+	}
+	return
+}
+
+func syslogBody(n int) string {
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, "Dec 10 06:55:%02d host sshd[1]: login ok for item %d\n", i, i)
+	}
+	return b.String()
+}
+
+func isoBody(n int) string {
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, "2026-01-05T10:00:%02dZ svc login ok for item %d\n", i, i)
+	}
+	return b.String()
+}
+
+func TestASourceWithNoZoneIsShownAsWrittenWithNoZoneWordAnywhere(t *testing.T) {
+	cfg := miner.DefaultConfig()
+	d := build(t, &cfg, in("syslog.log", syslogBody(6)))
+	if srcs, err := d.SourceInfos(bg); err != nil || len(srcs) != 1 || srcs[0].TimeKind == store.TimeExact {
+		t.Fatalf("the source is %+v, %v; the test needs a source with no zone", srcs, err)
+	}
+	s, _ := mustBuild(t, d, DefaultOptions())
+	out := Render(s)
+	if strings.Contains(out, "UTC") {
+		t.Errorf("a zone word for a log that states none:\n%s", out)
+	}
+	src, pats, heads := renderLines(out)
+	if len(src) != 1 || len(pats) == 0 || len(heads) == 0 {
+		t.Fatalf("source lines %d, pattern lines %d, time heads %d:\n%s", len(src), len(pats), len(heads), out)
+	}
+	for _, h := range heads {
+		if !strings.HasSuffix(h, "times as written in the log (no zone is assumed)") {
+			t.Errorf("time head %q", h)
+		}
+	}
+	if !strings.Contains(src[0], "2026-12-10 06:55:00..2026-12-10 06:55:05") {
+		t.Errorf("source line %q lacks the times as written", src[0])
+	}
+}
+
+func TestASourceThatStatesItsZoneIsShownInUTC(t *testing.T) {
+	cfg := miner.DefaultConfig()
+	// The second source has no time at all: it does not take the zone away.
+	d := build(t, &cfg, in("iso.log", isoBody(6)), in("bare.log", "svc login ok now 1\nsvc login ok now 2\n"))
+	s, _ := mustBuild(t, d, DefaultOptions())
+	out := Render(s)
+	src, pats, heads := renderLines(out)
+	if len(src) != 2 || len(pats) == 0 || len(heads) == 0 {
+		t.Fatalf("source lines %d, pattern lines %d, time heads %d:\n%s", len(src), len(pats), len(heads), out)
+	}
+	if !strings.HasSuffix(src[0], "2026-01-05 10:00:00..2026-01-05 10:00:05 UTC") || strings.Contains(src[1], "UTC") {
+		t.Errorf("source lines %q", src)
+	}
+	for _, l := range pats {
+		if strings.Contains(l, "no time") {
+			continue
+		}
+		if !strings.Contains(l, "2026-01-05 10:00:00 to 2026-01-05 10:00:05 UTC") {
+			t.Errorf("pattern line %q lacks UTC", l)
+		}
+	}
+	for _, h := range heads {
+		if !strings.HasSuffix(h, "times in UTC") {
+			t.Errorf("time head %q", h)
+		}
+	}
+	if strings.Contains(out, "as written") {
+		t.Errorf("the render says as written for a log that states its zone:\n%s", out)
+	}
+}
+
+func TestOneSourceWithAZoneAndOneWithoutGiveNoZoneWordOnTheMixedLines(t *testing.T) {
+	cfg := miner.DefaultConfig()
+	d := build(t, &cfg, in("iso.log", isoBody(6)), in("syslog.log", syslogBody(6)))
+	s, _ := mustBuild(t, d, DefaultOptions())
+	out := Render(s)
+	src, pats, heads := renderLines(out)
+	if len(src) != 2 || len(pats) == 0 || len(heads) == 0 {
+		t.Fatalf("source lines %d, pattern lines %d, time heads %d:\n%s", len(src), len(pats), len(heads), out)
+	}
+	// Each source says what it is: the one with a zone is in UTC, the other is not.
+	for _, l := range src {
+		if strings.Contains(l, "iso.log") != strings.Contains(l, "UTC") {
+			t.Errorf("source line %q", l)
+		}
+	}
+	for _, l := range pats {
+		if strings.Contains(l, "UTC") {
+			t.Errorf("pattern line %q names a zone, but its records come from two sources", l)
+		}
+	}
+	for _, h := range heads {
+		if !strings.HasSuffix(h, "times as written in the log (no zone is assumed)") {
+			t.Errorf("time head %q", h)
+		}
+	}
+}
+
+func TestTheMinerBlockCountsWhatThePatternsHoldAndACatchAllOfALineWithNothingButATime(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < 4; i++ {
+		fmt.Fprintf(&b, "%s svc login ok now %d\n", stampAt(i), i)
+	}
+	b.WriteString(stampAt(9) + "\n") // nothing after the time stamp: no tokens
+	d := minedBody(t, b.String())
+	s, _ := mustBuild(t, d, DefaultOptions())
+	var mb Block
+	for _, blk := range s.Blocks {
+		if blk.Kind == "miner" {
+			mb = blk
+		}
+	}
+	m := mb.Miner
+	if m == nil || m.Records != 5 || m.CatchAll != 1 || m.Patterns != 1 {
+		t.Fatalf("miner report %+v; the cap is far away, and the line of a time stamp is the only record of the catch-all", m)
+	}
+	out := Render(Summary{Blocks: []Block{mb}})
+	for _, want := range []string{"1 pattern holds 4 records", "catch-all: 1 record (20.0% of records)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("miner block lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestACountWithTheNumberOneHasASingularNoun(t *testing.T) {
+	p := store.PatternStat{ID: 3, Text: "svc <*>", Records: 1, Share: 1}
+	slot := store.SlotStat{Pos: 0, Type: "int", Total: 1, Distinct: 1, Top: []store.ValueCount{{Value: "5", Count: 1, Share: 1}}}
+	srcs := make([]store.SourceInfo, 17)
+	for i := range srcs {
+		srcs[i] = store.SourceInfo{ID: i + 1, Name: "a", Records: 1}
+	}
+	rep := store.MinerReport{Patterns: 1, Records: 1, SeenOnce: 1}
+	s := Summary{Omitted: Omitted{Patterns: 1, Records: 1}, Blocks: []Block{
+		{ID: "S1", Kind: "sources", Sources: srcs},
+		{ID: "S2", Kind: "miner", Miner: &rep},
+		{ID: "S3", Kind: "patterns", Patterns: []store.PatternStat{p}},
+		{ID: "S4", Kind: "slots", Pattern: 3, Patterns: []store.PatternStat{p}, Slots: []store.SlotStat{slot}},
+	}}
+	out := Render(s) + RenderDigest(Digest{Records: 1, Patterns: 1, Groups: []store.PatternStat{p}})
+	for _, want := range []string{
+		"not listed: 1 more source (1 record)", "1 pattern holds 1 record", "seen once: 1 pattern (100.0% of records)",
+		"p3  1 record (100.0%)", "not listed: 1 more pattern (1 record)", "slot 0 (int): 1 value, 1 distinct",
+		"    1 (100.0%) 5", "digest: 1 record, 1 pattern", "1. p3  1 record (100.0%)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the render lacks %q:\n%s", want, out)
+		}
+	}
+	for _, bad := range []string{" 1 records", " 1 patterns", " 1 values", " 1 sources"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("the render holds %q:\n%s", bad, out)
+		}
+	}
+}
+
+func TestTheStandardInputIsNamedInTheSourcesBlockAndTheStoredNameIsUntouched(t *testing.T) {
+	cfg := miner.DefaultConfig()
+	d := build(t, &cfg, in("-", "svc login ok now 1\nsvc login ok now 2\n"))
+	s, _ := mustBuild(t, d, DefaultOptions())
+	out := Render(s)
+	if !strings.Contains(out, "\n  standard input: 2 rec, ") {
+		t.Errorf("the sources block does not say standard input:\n%s", out)
+	}
+	if strings.Contains(out, "  -: ") {
+		t.Errorf("the sources block shows the stored name:\n%s", out)
+	}
+	if srcs, err := d.SourceInfos(bg); err != nil || len(srcs) != 1 || srcs[0].Name != "-" {
+		t.Errorf("the stored name is %+v, %v; want -", srcs, err)
+	}
+}
+
+func TestASourceLineIsNeverLongerThan100BytesForTheLargestNumbers(t *testing.T) {
+	long := strings.Repeat("n", 5000)
+	for _, kind := range []string{store.TimeExact, store.TimeWall} {
+		for _, bytes := range []int64{math.MaxInt64, 1048500, 1023, 0} {
+			s := store.SourceInfo{ID: 1, Name: long, TimeKind: kind, Records: math.MaxInt64, Lines: math.MaxInt64, Bytes: bytes,
+				WithTime: math.MaxInt64, HasTimes: true, FirstNanos: math.MinInt64, LastNanos: math.MaxInt64}
+			if l := sourceLine(s); len(l) > 100 {
+				t.Errorf("%s, %d bytes: a line of %d bytes: %q", kind, bytes, len(l), l)
+			}
+		}
+	}
+	for n, want := range map[int64]string{1023: "1023 B", 1048500: "1023.9 KiB", 1048575: "1024.0 KiB"} {
+		if got := humanBytes(n); got != want {
+			t.Errorf("humanBytes(%d) = %q, want %q", n, got, want)
+		}
 	}
 }

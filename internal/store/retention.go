@@ -51,9 +51,9 @@ type Info struct {
 	// is not ours and its meta table is missing or has no complete row. A
 	// database whose header is ours and whose meta table cannot be read, or
 	// that SQLite finds malformed because the file was cut, is kept like one the
-	// program does not know about. An
-	// unreadable database for which the program does not know (busy, an I/O
-	// error, no permission, a lock that cannot be tested) is kept; under
+	// program does not know about. An unreadable database for which the program
+	// does not know (busy, an I/O error, no permission, a lock that cannot be
+	// tested) is kept; under
 	// Policy.All it is removed too, unless its lock could not be tested.
 	State string
 	// Records and Version are read from the database. For a running database
@@ -518,8 +518,12 @@ var beforeSizePhase func()
 // databases that are still kept; one that has become running is moved to
 // res.Running, and one that is removed to res.Removed.
 func sweepSize(kept []Info, res *SweepResult, limit int64, errs *[]error) []Info {
-	// The scan was a while ago: a run that is still writing has grown its file
-	// since. The size at this moment is what the limit is about.
+	// The scan was a while ago, and a database that was not locked then may
+	// have grown since (a run that began on it is found by the lock test of
+	// the loop below). The size of each kept database is read again, so that the
+	// limit is about its size at this moment. A running database is in
+	// res.Running and is counted with the size the scan gave it; a writing run
+	// is not read again here.
 	for n := range kept {
 		if fi, err := os.Stat(kept[n].Path); err == nil {
 			kept[n].Size = fi.Size()

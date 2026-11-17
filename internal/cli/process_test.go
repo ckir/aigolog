@@ -398,7 +398,7 @@ func TestASecondSIGINTKillsAtOnce(t *testing.T) {
 	if !ok {
 		t.Fatalf("no wait status in %T", st.Sys())
 	}
-	// Measured on Linux (7.0.0-43-generic, 2026-11-17): with -count=20 every
+	// Measured on Linux (2026-11-17): with -count=20 every
 	// run ended with the wait status "signal: interrupt", ExitCode -1: the
 	// second SIGINT kills the process, it does not make it exit with 1. (With
 	// a script, the same: Python's returncode -2.) The database and its lock
