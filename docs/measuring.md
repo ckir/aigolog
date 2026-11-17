@@ -19,7 +19,7 @@ Without `-bin`, `measure` builds `./cmd/aigolog` with `go build` into the tempor
 ## What it does not control
 
 - **The background load of the machine.** Other programs, the operating system's own services, antivirus, indexing and updates all take time and memory that `measure` cannot stop. The report prints the load average at the start and at the end where the system gives it (Linux), and says the load was not controlled. Close what you can, plug the machine in, and read a figure as a figure of a machine in the state it was in.
-- **The file cache.** The first run starts with a cold file cache and can be slower than the later ones.
+- **The file cache.** The log is written just before the first run, so it is probably in the file cache for every run, and the first run can still be slower because the program, the database folder and the processor caches are not warm yet. `measure` does not drop the file cache (that needs administrator rights), so a figure says nothing about a cold-cache run.
 - **Frequency scaling and heat.** A laptop on battery, or one that is hot, is slower.
 
 ## How to run it
@@ -86,4 +86,4 @@ The rule:
 - Each bar is decided on the worst of the runs of its size: the slowest run, the highest peak, the largest database.
 - The exit code stays 0 whether the bars are met or not. They are the owner's provisional bars and a slower machine may miss them; a missed bar is a figure to look at, not a failure.
 - The layout stands if the four bars are all `met`. When one fails, the layout and miner choices go back to the owner with the figures, and nothing else is built on them.
-- If a run fails, bar 1 is `not met`, the bars that need a figure the failed run would have given are `not decided`, and the exit code is 1.
+- If a run fails, no later run is tried, bar 1 is `not met` and the exit code is 1. Each other bar is decided from the runs of its size that finished, when at least one run of that size finished (so a bar can be `met` or `not met` from fewer runs than were asked for); a bar whose size has no finished run is `not decided`. Bar 2 needs a finished run at both sizes.

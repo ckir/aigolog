@@ -325,7 +325,7 @@ type machine struct {
 // notes are said in every report.
 var notes = []string{
 	"The background load of the machine was not controlled.",
-	"The first run starts with a cold file cache, so it can be slower than the later ones.",
+	"The log is written just before the first run, so it is probably in the file cache for every run, and the first run can still be slower because the program, the database folder and the processor caches are not warm yet. The command does not drop the file cache (that needs administrator rights), so a figure says nothing about a cold-cache run.",
 	"A figure is quoted as the range of two or more runs, never as a point.",
 }
 

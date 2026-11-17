@@ -132,10 +132,17 @@ func TestMeasureRunsASmallLogAndReportsEveryFigure(t *testing.T) {
 		"records", "patterns", "seen once", "catch-all",
 		runtime.GOOS + "/" + runtime.GOARCH, runtime.Version(), "cpus", "program",
 		"background load of the machine was not controlled",
-		"cold file cache", "range of two or more runs",
+		"probably in the file cache", "does not drop the file cache", "range of two or more runs",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the text does not say %q:\n%s", want, out)
+		}
+	}
+	// The old claim, that the first run starts cold, is false: the log is written
+	// just before it. It must not come back.
+	for _, old := range []string{"starts with a cold", "cold file cache"} {
+		if strings.Contains(out, old) {
+			t.Errorf("the text claims %q about the first run:\n%s", old, out)
 		}
 	}
 	if runtime.GOOS == "linux" {
