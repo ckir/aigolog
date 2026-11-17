@@ -37,7 +37,7 @@ import (
 	"github.com/ckir/aigolog/internal/textsafe"
 )
 
-const usage = "Usage: measure [-kind ssh|restart|web|dense] [-lines N] [-seed N] [-runs N] [-bin PATH] [-keep] [-json] [-bars] [-small-lines N]"
+const usage = "Usage: measure [-kind ssh|restart|web|dense] [-lines N] [-seed N] [-runs N] [-bin PATH] [-keep] [-json] [-bars] [-small-lines N]\n       measure -log PATH [-runs N] [-bin PATH] [-keep] [-json]"
 
 // The four bars of the acceptance record (A6). They are the owner's
 // provisional bars; they are variables so that a test can set them.
@@ -89,6 +89,12 @@ type options struct {
 	json       bool
 	bars       bool
 	smallLines int
+	// log is the path of a log to measure, as the user gave it and cleaned; ""
+	// when the log is generated. logAbs is the same file as an absolute path,
+	// because the program runs in another folder. For a given log, lines is
+	// counted from the file.
+	log    string
+	logAbs string
 }
 
 // run is the command: it returns 0 when it measured (whether or not the bars
@@ -111,6 +117,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&o.json, "json", false, "print the figures as one JSON document")
 	fs.BoolVar(&o.bars, "bars", false, "also run the log at -small-lines lines and say whether the four bars of the acceptance record are met")
 	fs.IntVar(&o.smallLines, "small-lines", 100000, "the smaller size for the memory bar, used with -bars")
+	fs.StringVar(&o.log, "log", "", "measure aigolog analyze on this log file instead of a generated one; -kind, -lines, -seed, -bars and -small-lines cannot be given with it")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return exitcode.OK
@@ -134,6 +141,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return wrong("-small-lines must be at least 1, not %d", o.smallLines)
 	}
 
+	given := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
+	if given["log"] {
+		for _, name := range []string{"kind", "lines", "seed", "bars", "small-lines"} {
+			if given[name] {
+				return wrong("-%s cannot be given with -log: the log is the file, not a generated one", name)
+			}
+		}
+		if err := o.useLog(); err != nil {
+			return wrong("-log: %v", err)
+		}
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -150,6 +170,66 @@ func run(args []string, stdout, stderr io.Writer) int {
 		defer os.RemoveAll(e.tmp)
 	}
 	return e.measure(ctx, stdout, stderr)
+}
+
+// useLog takes the log file named by o.log: it checks that it is a regular
+// file and sets o.lines to the number of lines it holds. The file is read as a
+// stream, never whole.
+func (o *options) useLog() error {
+	if o.log == "" {
+		return errors.New("the file name is empty")
+	}
+	o.log = filepath.Clean(o.log)
+	st, err := os.Stat(o.log)
+	if err != nil {
+		return unwrapPath(err)
+	}
+	if !st.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", o.log)
+	}
+	if o.logAbs, err = filepath.Abs(o.log); err != nil {
+		return unwrapPath(err)
+	}
+	f, err := os.Open(o.log)
+	if err != nil {
+		return unwrapPath(err)
+	}
+	defer f.Close()
+	if o.lines, err = countLines(f); err != nil {
+		return fmt.Errorf("reading %s: %w", o.log, unwrapPath(err))
+	}
+	if o.lines < 1 {
+		return fmt.Errorf("%s is empty", o.log)
+	}
+	return nil
+}
+
+// countLines counts the lines of what r gives, by the newline: a last line
+// without one counts as one more, and nothing is zero lines. A carriage return
+// is part of its line.
+func countLines(r io.Reader) (int, error) {
+	buf := make([]byte, 64<<10)
+	n := 0
+	var last byte
+	seen := false
+	for {
+		k, err := r.Read(buf)
+		if k > 0 {
+			seen = true
+			n += bytes.Count(buf[:k], []byte{'\n'})
+			last = buf[k-1]
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+	if seen && last != '\n' {
+		n++
+	}
+	return n, nil
 }
 
 // experiment is one invocation: the folder it works in and the program.
@@ -329,11 +409,20 @@ var notes = []string{
 	"A figure is quoted as the range of two or more runs, never as a point.",
 }
 
+// logNotes are said instead of notes for a given log: it is not written by
+// this command, but it has just been read to count its lines.
+var logNotes = []string{
+	notes[0],
+	"The log is read once, to count its lines, just before the first run, so it is probably in the file cache for every run if the machine has the memory for it, and the first run can still be slower because the program, the database folder and the processor caches are not warm yet. The command does not drop the file cache (that needs administrator rights), so a figure says nothing about a cold-cache run.",
+	notes[2],
+}
+
 // document is the whole report.
 type document struct {
 	Format  int             `json:"format"`
 	Kind    string          `json:"kind"`
 	Seed    int64           `json:"seed"`
+	Log     string          `json:"log,omitempty"` // the given log, when there is one; the kind is then "log" and the seed 0
 	Lines   int             `json:"lines"`
 	Machine machine         `json:"machine"`
 	Runs    []runFigures    `json:"runs"`
@@ -357,6 +446,9 @@ func (e *experiment) measure(ctx context.Context, stdout, stderr io.Writer) int 
 		},
 		Runs:  []runFigures{},
 		Notes: notes,
+	}
+	if o.log != "" {
+		doc.Kind, doc.Seed, doc.Log, doc.Notes = "log", 0, o.log, logNotes
 	}
 	withSmall := o.bars && o.lines > o.smallLines
 	var small *sizeReport
@@ -424,16 +516,9 @@ func (e *experiment) measure(ctx context.Context, stdout, stderr io.Writer) int 
 // appending the figures of each run that finished. It stops at the first run
 // that fails.
 func (e *experiment) runSize(ctx context.Context, prefix string, lines int, into *[]runFigures) error {
-	logPath := filepath.Join(e.tmp, "logs", fmt.Sprintf("%s-%d.log", e.o.kind, lines))
-	data := generate(e.o.kind, e.o.seed, lines)
-	logBytes := int64(len(data))
-	err := os.WriteFile(logPath, data, 0o600)
-	// The log is not kept in memory while the program runs: the program is
-	// started from this process, and what this process holds must not be
-	// counted as the program's.
-	data = nil
+	logPath, logBytes, err := e.logFile(lines)
 	if err != nil {
-		return fmt.Errorf("writing the log: %w", unwrapPath(err))
+		return err
 	}
 	for n := 1; n <= e.o.runs; n++ {
 		name := fmt.Sprintf("run%d", n)
@@ -447,6 +532,30 @@ func (e *experiment) runSize(ctx context.Context, prefix string, lines int, into
 		*into = append(*into, fig)
 	}
 	return nil
+}
+
+// logFile returns the log to run on, with its size: the given file where it
+// is (it is not copied), or a generated log written to the temporary folder.
+func (e *experiment) logFile(lines int) (string, int64, error) {
+	if e.o.log != "" {
+		st, err := os.Stat(e.o.logAbs)
+		if err != nil {
+			return "", 0, fmt.Errorf("reading the log: %w", unwrapPath(err))
+		}
+		return e.o.logAbs, st.Size(), nil
+	}
+	logPath := filepath.Join(e.tmp, "logs", fmt.Sprintf("%s-%d.log", e.o.kind, lines))
+	data := generate(e.o.kind, e.o.seed, lines)
+	logBytes := int64(len(data))
+	err := os.WriteFile(logPath, data, 0o600)
+	// The log is not kept in memory while the program runs: the program is
+	// started from this process, and what this process holds must not be
+	// counted as the program's.
+	data = nil
+	if err != nil {
+		return "", 0, fmt.Errorf("writing the log: %w", unwrapPath(err))
+	}
+	return logPath, logBytes, nil
 }
 
 // generate makes the log of a kind.
@@ -834,7 +943,11 @@ func renderText(d document) string {
 	if len(d.Runs) == 1 {
 		runWord = "run"
 	}
-	fmt.Fprintf(&b, "measure: %s log of %d lines, seed %d, %d %s of aigolog analyze\n\n", d.Kind, d.Lines, d.Seed, len(d.Runs), runWord)
+	if d.Log != "" {
+		fmt.Fprintf(&b, "measure: a given log of %d lines, %d %s of aigolog analyze\n\n", d.Lines, len(d.Runs), runWord)
+	} else {
+		fmt.Fprintf(&b, "measure: %s log of %d lines, seed %d, %d %s of aigolog analyze\n\n", d.Kind, d.Lines, d.Seed, len(d.Runs), runWord)
+	}
 
 	m := d.Machine
 	b.WriteString("Machine\n")
@@ -850,9 +963,13 @@ func renderText(d document) string {
 	}
 	b.WriteString("\n")
 
-	writeFigures(&b, d.Lines, d.Runs, d.Summary)
+	heading := fmt.Sprintf("Figures at %d lines", d.Lines)
+	if d.Log != "" {
+		heading = fmt.Sprintf("log: %s, %d lines", d.Log, d.Lines)
+	}
+	writeFigures(&b, heading, d.Runs, d.Summary)
 	if d.Small != nil {
-		writeFigures(&b, d.Small.Lines, d.Small.Runs, d.Small.Summary)
+		writeFigures(&b, fmt.Sprintf("Figures at %d lines", d.Small.Lines), d.Small.Runs, d.Small.Summary)
 	}
 
 	if len(d.Bars) > 0 {
@@ -874,9 +991,9 @@ func renderText(d document) string {
 }
 
 // writeFigures writes the figures of one size.
-func writeFigures(b *strings.Builder, lines int, runs []runFigures, s *summaryFigures) {
+func writeFigures(b *strings.Builder, heading string, runs []runFigures, s *summaryFigures) {
 	if s == nil {
-		fmt.Fprintf(b, "Figures at %d lines\n  no run finished\n\n", lines)
+		fmt.Fprintf(b, "%s\n  no run finished\n\n", heading)
 		return
 	}
 	n := len(runs)
@@ -884,7 +1001,7 @@ func writeFigures(b *strings.Builder, lines int, runs []runFigures, s *summaryFi
 	if n == 1 {
 		title = "1 run"
 	}
-	fmt.Fprintf(b, "Figures at %d lines (%s)\n", lines, title)
+	fmt.Fprintf(b, "%s (%s)\n", heading, title)
 	row := func(label, lo, hi string) {
 		fmt.Fprintf(b, "  %s: %s\n", label, rangeText(n, lo, hi))
 	}

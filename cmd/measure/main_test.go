@@ -666,3 +666,129 @@ func TestAPeakThatCannotBeTrustedIsNotMeasured(t *testing.T) {
 		t.Errorf("a peak that may be floored by the command's memory is shown:\n%s", out)
 	}
 }
+
+// writeFile writes a file under the test's own folder and returns its path.
+func writeFile(t *testing.T, name string, data []byte) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestMeasureOfAGivenLogReportsItsLineCountAndRefusesGeneratorFlags(t *testing.T) {
+	bin := program(t)
+	data, _ := testlog.SSH(1, 10)
+	logPath := writeFile(t, "given.log", data)
+
+	code, out, errOut := measure(t, "-log", logPath, "-runs", "1", "-bin", bin)
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errOut)
+	}
+	if want := "log: " + filepath.Clean(logPath) + ", 10 lines"; !strings.Contains(out, want) {
+		t.Errorf("the figures do not say %q:\n%s", want, out)
+	}
+	if !regexp.MustCompile(`(?m)^\s*records:\s+10$`).MatchString(out) {
+		t.Errorf("the text does not give 10 records:\n%s", out)
+	}
+	if want := fmt.Sprintf("log size: %s", fmtBytes(uint64(len(data)))); !strings.Contains(out, want) {
+		t.Errorf("the log size is not the size of the file (%q):\n%s", want, out)
+	}
+	if strings.Contains(out, "Figures at") {
+		t.Errorf("the text keeps the wording of a generated log:\n%s", out)
+	}
+	for _, want := range []string{"background load of the machine was not controlled", "probably in the file cache", "does not drop the file cache", "range of two or more runs"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the notes do not say %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "is written just before") {
+		t.Errorf("the notes say the given log is written by the command:\n%s", out)
+	}
+	// The file is measured where it is, never changed.
+	if after, err := os.ReadFile(logPath); err != nil || !bytes.Equal(after, data) {
+		t.Errorf("the given log was changed or is gone: %v", err)
+	}
+	// -runs, -keep and -json work as before.
+	code, doc, errOut := measure(t, "-log", logPath, "-runs", "2", "-bin", bin, "-json")
+	if code != 0 {
+		t.Fatalf("-json: exit %d, stderr %q", code, errOut)
+	}
+	d := decode(t, doc)
+	if d["lines"].(float64) != 10 || d["log"] != filepath.Clean(logPath) {
+		t.Errorf("lines = %v, log = %v, want 10 and %q", d["lines"], d["log"], filepath.Clean(logPath))
+	}
+	if n := len(d["runs"].([]any)); n != 2 {
+		t.Errorf("%d runs, want 2", n)
+	}
+	// A generated log has no such key.
+	_, gen, _ := measure(t, "-lines", "100", "-runs", "1", "-bin", bin, "-json")
+	if _, ok := decode(t, gen)["log"]; ok {
+		t.Errorf("a generated log's document has a log key:\n%s", gen)
+	}
+
+	for _, c := range []struct {
+		flag string
+		args []string
+	}{
+		{"-kind", []string{"-kind", "web"}},
+		{"-lines", []string{"-lines", "5"}},
+		{"-seed", []string{"-seed", "2"}},
+		{"-bars", []string{"-bars"}},
+		{"-small-lines", []string{"-small-lines", "5"}},
+	} {
+		code, out, errOut := measure(t, append([]string{"-log", logPath, "-bin", bin}, c.args...)...)
+		if code != 2 {
+			t.Errorf("%s with -log: exit %d, want 2", c.flag, code)
+		}
+		if !strings.Contains(errOut, c.flag) || !strings.Contains(errOut, "-log") {
+			t.Errorf("%s with -log: stderr does not name the flags: %q", c.flag, errOut)
+		}
+		if out != "" {
+			t.Errorf("%s with -log: stdout %q, want nothing", c.flag, out)
+		}
+	}
+	// A flag given with its default value is still given.
+	if code, _, _ := measure(t, "-log", logPath, "-bin", bin, "-kind", "ssh"); code != 2 {
+		t.Errorf("-kind ssh with -log: exit %d, want 2", code)
+	}
+
+	// An empty file, a missing file and an empty name are usage errors.
+	empty := writeFile(t, "empty.log", nil)
+	for name, p := range map[string]string{
+		"empty file":   empty,
+		"missing file": filepath.Join(filepath.Dir(empty), "no-such.log"),
+		"empty name":   "",
+		"a folder":     filepath.Dir(empty),
+	} {
+		if code, _, errOut := measure(t, "-log", p, "-bin", bin); code != 2 || !strings.Contains(errOut, "-log") {
+			t.Errorf("%s: exit %d, stderr %q, want 2 and a message that names -log", name, code, errOut)
+		}
+	}
+}
+
+func TestCountLinesCountsNewlinesAndALastLineWithoutOne(t *testing.T) {
+	big := strings.Repeat("a line\n", 50000) // longer than any read buffer
+	for _, c := range []struct {
+		name string
+		in   string
+		want int
+	}{
+		{"empty", "", 0},
+		{"one line with a newline", "a\n", 1},
+		{"one line without", "a", 1},
+		{"no trailing newline", "a\nb\nc", 3},
+		{"trailing newline", "a\nb\nc\n", 3},
+		{"CRLF counts by LF", "a\r\nb\r\n", 2},
+		{"CRLF and a last line without", "a\r\nb", 2},
+		{"empty lines", "\n\n\n", 3},
+		{"long", big, 50000},
+		{"long without trailing newline", big + "x", 50001},
+	} {
+		got, err := countLines(strings.NewReader(c.in))
+		if err != nil || got != c.want {
+			t.Errorf("%s: countLines = %d, %v, want %d", c.name, got, err, c.want)
+		}
+	}
+}
