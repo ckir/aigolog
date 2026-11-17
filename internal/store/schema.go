@@ -10,8 +10,9 @@ package store
 const createdLayout = "2006-01-02T15:04:05Z"
 
 // schema is the list of statements that make an empty database of a run
-// (layout 2: the records, and the patterns, the slots and the values that the
-// miner finds in them). They are run in one transaction by Create. slot_values
+// (layout 3: the records, the patterns, the slots and the values that the
+// miner finds in them, and the answers that "aigolog query" stores, empty at
+// first). They are run in one transaction by Create. slot_values
 // has no index: the indexes are made after the load.
 var schema = []string{
 	`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID`,
@@ -31,4 +32,5 @@ var schema = []string{
   records INTEGER NOT NULL DEFAULT 0, first_nanos INTEGER, last_nanos INTEGER)`,
 	`CREATE TABLE slots (id INTEGER PRIMARY KEY, pattern INTEGER NOT NULL, pos INTEGER NOT NULL, type TEXT NOT NULL)`,
 	`CREATE TABLE slot_values (record INTEGER NOT NULL, slot INTEGER NOT NULL, value TEXT NOT NULL)`,
+	`CREATE TABLE answers (id INTEGER PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL, created TEXT NOT NULL)`,
 }

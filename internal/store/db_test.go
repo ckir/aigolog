@@ -566,7 +566,7 @@ func TestCreateWritesTheMetaRows(t *testing.T) {
 	d := newDB(t) // the clock is 2026-01-16 10:15:00 UTC
 	want := map[string]string{
 		"version":  buildinfo.Version,
-		"schema":   "2",
+		"schema":   "3",
 		"created":  "2026-01-16T10:15:00Z",
 		"complete": "0",
 	}
@@ -759,7 +759,7 @@ func TestCreateRetriesWhenACleanerReplacesTheLockFileBeforeItIsChecked(t *testin
 	}
 }
 
-func TestCreateMakesTheTablesOfLayoutTwo(t *testing.T) {
+func TestCreateMakesTheTablesOfLayoutThree(t *testing.T) {
 	d := newDB(t)
 	rows, err := d.conn.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)
 	if err != nil {
@@ -774,7 +774,7 @@ func TestCreateMakesTheTablesOfLayoutTwo(t *testing.T) {
 		}
 		got = append(got, name)
 	}
-	want := []string{"meta", "patterns", "records", "slot_values", "slots", "sources"}
+	want := []string{"answers", "meta", "patterns", "records", "slot_values", "slots", "sources"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("tables = %v, want %v", got, want)
 	}
@@ -784,6 +784,7 @@ func TestCreateMakesTheTablesOfLayoutTwo(t *testing.T) {
 		"slots":       {"id INTEGER", "pattern INTEGER", "pos INTEGER", "type TEXT"},
 		"slot_values": {"record INTEGER", "slot INTEGER", "value TEXT"},
 		"records":     {"t_len INTEGER", "pattern INTEGER", "raw TEXT"},
+		"answers":     {"id INTEGER", "question TEXT", "answer TEXT", "created TEXT"},
 	} {
 		have := map[string]bool{}
 		info, err := d.conn.QueryContext(ctx, `SELECT name, type FROM pragma_table_info(?)`, table)
@@ -868,13 +869,13 @@ func TestOpenRefusesADatabaseOfLayoutOne(t *testing.T) {
 		`INSERT INTO meta VALUES ('complete', '1')`)
 	_, err := Open(ctx, path)
 	var se *SchemaError
-	if !errors.As(err, &se) || se.Have != "1" || se.Want != "2" {
-		t.Fatalf("Open = %v, want a *SchemaError from 1 to 2", err)
+	if !errors.As(err, &se) || se.Have != "1" || se.Want != "3" {
+		t.Fatalf("Open = %v, want a *SchemaError from 1 to 3", err)
 	}
-	if !strings.Contains(err.Error(), `"aigolog clean"`) || !strings.Contains(err.Error(), "layout 1") || !strings.Contains(err.Error(), "layout 2") {
+	if !strings.Contains(err.Error(), `"aigolog clean"`) || !strings.Contains(err.Error(), "layout 1") || !strings.Contains(err.Error(), "layout 3") {
 		t.Errorf("message = %q; want it to name both layouts and aigolog clean", err.Error())
 	}
-	const want = `the database has layout 1, and this aigolog reads layout 2; "aigolog clean" removes it`
+	const want = `the database has layout 1, and this aigolog reads layout 3; "aigolog clean" removes it`
 	if err.Error() != want {
 		t.Errorf("message = %q, want %q", err.Error(), want)
 	}

@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-func TestCreateWritesTheHeaderOfLayoutTwo(t *testing.T) {
+func TestCreateWritesTheHeaderOfLayoutThree(t *testing.T) {
 	d := newDB(t)
 	if err := d.MarkComplete(ctx); err != nil {
 		t.Fatal(err)
@@ -37,8 +37,8 @@ func TestCreateWritesTheHeaderOfLayoutTwo(t *testing.T) {
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&userVersion); err != nil {
 		t.Fatal(err)
 	}
-	if appID != 1095322695 || userVersion != 2 {
-		t.Errorf("application_id = %d, user_version = %d; want 1095322695 and 2", appID, userVersion)
+	if appID != 1095322695 || userVersion != 3 {
+		t.Errorf("application_id = %d, user_version = %d; want 1095322695 and 3", appID, userVersion)
 	}
 }
 
@@ -89,6 +89,19 @@ func TestReadOnlyURI(t *testing.T) {
 	} {
 		if got := readOnlyURI(c.path); got != c.want {
 			t.Errorf("readOnlyURI(%q) = %q, want %q", c.path, got, c.want)
+		}
+	}
+}
+
+func TestFileURI(t *testing.T) {
+	for _, c := range []struct{ path, mode, want string }{
+		{"/tmp/x.db", "ro", "file:///tmp/x.db?mode=ro"},
+		{"/tmp/x.db", "rw", "file:///tmp/x.db?mode=rw"},
+		{"/tmp/a b#c%d?e.db", "rw", "file:///tmp/a%20b%23c%25d%3Fe.db?mode=rw"},
+		{`C:\Users\x\a b.db`, "rw", "file:///C:%5CUsers%5Cx%5Ca%20b.db?mode=rw"},
+	} {
+		if got := fileURI(c.path, c.mode); got != c.want {
+			t.Errorf("fileURI(%q, %q) = %q, want %q", c.path, c.mode, got, c.want)
 		}
 	}
 }

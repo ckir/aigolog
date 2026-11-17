@@ -24,10 +24,10 @@ const (
 	// bytes "AILG".
 	applicationID = 0x41494C47
 	// schemaNumber is the user_version of the layout this version reads.
-	schemaNumber = 2
+	schemaNumber = 3
 	// schemaVersion is the value of the "schema" row of meta: the same layout,
 	// as text.
-	schemaVersion = "2"
+	schemaVersion = "3"
 )
 
 // SchemaError is returned by Open for a database of a layout that this version
@@ -58,17 +58,21 @@ func (d *DB) readHeader(ctx context.Context) (appID, userVersion int64, err erro
 
 // readOnlyURI returns the URI with which the driver opens the file at path for
 // reading only: SQLite then never makes the file, so a path that a cleaner has
-// just deleted fails to open. It takes the path as given and does not depend on
-// the system it runs on; a path that starts with a drive letter and a colon
-// (a Windows volume path) gets the leading "/" that a file URI has before it.
-// Space, "#", "?" and "%" are percent-encoded by net/url.
+// just deleted fails to open. It is fileURI with the mode "ro".
+func readOnlyURI(path string) string { return fileURI(path, "ro") }
+
+// fileURI returns the URI with which the driver opens the file at path in the
+// mode given ("ro" or "rw"; neither makes the file). It takes the path as given
+// and does not depend on the system it runs on; a path that starts with a drive
+// letter and a colon (a Windows volume path) gets the leading "/" that a file
+// URI has before it. Space, "#", "?" and "%" are percent-encoded by net/url.
 // UNPROVEN ON WINDOWS until the hosted machines run it.
-func readOnlyURI(path string) string {
+func fileURI(path, mode string) string {
 	if len(path) >= 2 && path[1] == ':' && isASCIILetter(path[0]) {
 		path = "/" + path
 	}
 	u := url.URL{Scheme: "file", Path: path}
-	return u.String() + "?mode=ro"
+	return u.String() + "?mode=" + mode
 }
 
 func isASCIILetter(c byte) bool { return c|0x20 >= 'a' && c|0x20 <= 'z' }
