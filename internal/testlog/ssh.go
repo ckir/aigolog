@@ -40,7 +40,9 @@ const sshHost = "LabSZ"
 // year.
 var sshStart = time.Date(2026, time.December, 10, 7, 7, 38, 0, time.UTC)
 
-// sshNames are the names the attacker with many names tries.
+// sshNames are the names of the attackers. The attacker with many names tries
+// the first 40, the one with a few the last two, so that the names of the whole
+// log are more than the names of the top attacker.
 var sshNames = []string{
 	"root", "admin", "administrator", "test", "guest", "user", "oracle", "postgres",
 	"mysql", "ftp", "ftpuser", "git", "svn", "jenkins", "tomcat", "nagios",
@@ -67,8 +69,8 @@ type sshTally struct {
 func sshActors(rng *rand.Rand) (attackers, background []sshActor) {
 	octets := rng.Perm(254) // 0..253, distinct: the last byte is octet+1
 	attackers = []sshActor{
-		{"203.0.113." + fmt.Sprint(octets[0]+1), sshNames},
-		{"203.0.113." + fmt.Sprint(octets[1]+1), sshNames[:2]},
+		{"203.0.113." + fmt.Sprint(octets[0]+1), sshNames[:40]},
+		{"203.0.113." + fmt.Sprint(octets[1]+1), sshNames[46:]},
 		{"203.0.113." + fmt.Sprint(octets[2]+1), sshNames[4:16]},
 	}
 	bgNames := sshNames[:6:6]

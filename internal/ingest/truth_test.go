@@ -111,6 +111,10 @@ func TestTheSSHLogKeepsItsTruthThroughTheMiner(t *testing.T) {
 	if truth.FailedLines < 1000 || truth.TopAttempts < 100 || truth.AcceptedLine != 1500 {
 		t.Fatalf("the truth is too small to prove anything: %+v", truth)
 	}
+	// The comparisons below tell something only when the numbers differ.
+	if truth.Names <= truth.TopNames || truth.TopOnRoot >= truth.TopAttempts {
+		t.Fatalf("the truth is degenerate (all the names are the top address's, or all its attempts are on root): %+v", truth)
+	}
 	const failed = "%Failed password%"
 	for _, w := range ways {
 		t.Run(w.name, func(t *testing.T) {
@@ -237,6 +241,9 @@ func TestTheWebLogKeepsItsTruthThroughTheMiner(t *testing.T) {
 	data, truth := testlog.Web(11, 3000)
 	if truth.DistinctPaths < 500 || truth.ClientRequests < 1000 {
 		t.Fatalf("the truth is too small to prove anything: %+v", truth)
+	}
+	if truth.ClientPaths >= truth.ClientRequests || truth.DistinctPaths <= truth.ClientPaths {
+		t.Fatalf("the truth is degenerate (requests, distinct paths of the client and of the log must differ): %+v", truth)
 	}
 	for _, w := range ways {
 		t.Run(w.name, func(t *testing.T) {

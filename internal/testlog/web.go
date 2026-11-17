@@ -43,7 +43,8 @@ var (
 )
 
 // Web makes a web log in the common log format with the time first, and its
-// truth: one client probes many different paths, ten others repeat a few.
+// truth: one client probes many different paths (and asks again for some),
+// ten others repeat a few.
 func Web(seed int64, lines int) ([]byte, WebTruth) {
 	var truth WebTruth
 	if lines <= 0 {
@@ -61,6 +62,7 @@ func Web(seed int64, lines int) ([]byte, WebTruth) {
 	}
 	clients := map[string]*who{}
 	paths := map[string]bool{}
+	var probed []string // the paths the prober has asked for, in order
 	var b strings.Builder
 	now := webStart
 	for no := 1; no <= lines; no++ {
@@ -71,7 +73,14 @@ func Web(seed int64, lines int) ([]byte, WebTruth) {
 		status, size := 200, 200+rng.Intn(60000)
 		if rng.Intn(100) < 45 {
 			client = prober
-			path = fmt.Sprintf("/%s/%s%d.%s", webDirs[rng.Intn(len(webDirs))], webFiles[rng.Intn(len(webFiles))], no, webExts[rng.Intn(len(webExts))])
+			if len(probed) > 0 && rng.Intn(100) < 10 {
+				// The prober asks again for one path in ten, so that its requests
+				// are more than its distinct paths.
+				path = probed[rng.Intn(len(probed))]
+			} else {
+				path = fmt.Sprintf("/%s/%s%d.%s", webDirs[rng.Intn(len(webDirs))], webFiles[rng.Intn(len(webFiles))], no, webExts[rng.Intn(len(webExts))])
+				probed = append(probed, path)
+			}
 			status, size = 404, 100+rng.Intn(900)
 			if rng.Intn(50) == 0 {
 				status = 403

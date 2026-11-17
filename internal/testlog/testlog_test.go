@@ -311,6 +311,36 @@ func TestWebTruthEqualsAnIndependentCount(t *testing.T) {
 	}
 }
 
+// TestTheTruthIsNotDegenerateAtTheSizesTheMinerTestsUse pins what makes the
+// comparisons of the truth tests tell something: the top attacker does not try
+// every name of the log, not all of its attempts are on root, and the probing
+// client asks again for some paths. With the two numbers of a comparison equal,
+// a query that drops its filter, or a generator that swaps two fields, would
+// pass.
+func TestTheTruthIsNotDegenerateAtTheSizesTheMinerTestsUse(t *testing.T) {
+	for _, seed := range []int64{1, 2, 3, 7, 11, 99} {
+		for _, n := range []int{700, 1000, 3000} {
+			t.Run(fmt.Sprintf("seed%d/%d", seed, n), func(t *testing.T) {
+				_, ssh := SSH(seed, n)
+				if ssh.Names <= ssh.TopNames || ssh.TopOnRoot >= ssh.TopAttempts || ssh.TopOnRoot == 0 || ssh.TopNames < 2 {
+					t.Errorf("ssh truth is degenerate: %+v", ssh)
+				}
+				data, web := Web(seed, n)
+				if web.ClientPaths >= web.ClientRequests || web.ClientPaths <= 1 || web.DistinctPaths <= web.ClientPaths {
+					t.Errorf("web truth is degenerate: %+v", web)
+				}
+				// Every path holds a digit: the miner reads a path without one as
+				// a part of its pattern, not as a value in it.
+				for i, l := range splitLines(t, data) {
+					if path := strings.Fields(l)[4]; !strings.ContainsAny(path, "0123456789") {
+						t.Fatalf("line %d has a path without a digit: %q", i+1, l)
+					}
+				}
+			})
+		}
+	}
+}
+
 // fakeT stands for a *testing.T that a test of the helper can survive: Skip
 // and Fatalf record what they were given and end the goroutine, as the real
 // ones do.
