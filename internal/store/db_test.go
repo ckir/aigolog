@@ -614,12 +614,37 @@ func TestCreateRetriesWhenTheDatabaseFileNameIsTaken(t *testing.T) {
 	}
 }
 
+// skipIfAnOpenFileCannotBeDeleted skips the test where the system does not
+// delete a file that is open. It is decided here, before Create is called, and
+// the probe closes its handle: a skip inside the hook would end the test in the
+// middle of Create and leave the lock file open. A cleaner can delete the lock
+// file of a run only where an open file can be deleted, so where it cannot
+// (Windows: Go opens files without the delete share mode) the cases of the
+// cleaner cannot happen and there is nothing to test.
+func skipIfAnOpenFileCannotBeDeleted(t *testing.T) {
+	t.Helper()
+	probe := filepath.Join(t.TempDir(), "probe")
+	f, err := os.OpenFile(probe, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeErr := os.Remove(probe)
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if removeErr != nil {
+		t.Skipf("this system does not delete a file that is open: %v", removeErr)
+	}
+}
+
 // cleanerActsOnce sets afterLockHook to a function that, the first time it is
 // called, removes the lock file (and, if replace, puts another file in its
-// place), as a cleaner does between the creation of the file and its check; it
-// skips the test where the system does not let a file that is open be deleted.
+// place), as a cleaner does between the creation of the file and its check. It
+// skips the test first, where the system does not let a file that is open be
+// deleted; the hook itself never skips.
 func cleanerActsOnce(t *testing.T, replace bool) {
 	t.Helper()
+	skipIfAnOpenFileCannotBeDeleted(t)
 	done := false
 	afterLockHook = func(lockPath string) {
 		if done {
@@ -627,7 +652,8 @@ func cleanerActsOnce(t *testing.T, replace bool) {
 		}
 		done = true
 		if err := os.Remove(lockPath); err != nil {
-			t.Skipf("this system does not delete a file that is open: %v", err)
+			t.Errorf("the cleaner could not delete the lock file: %v", err)
+			return
 		}
 		if replace {
 			if err := os.WriteFile(lockPath, []byte("theirs"), 0o600); err != nil {

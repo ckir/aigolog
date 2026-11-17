@@ -514,12 +514,27 @@ func TestSweepCountsTheSizeAtTheTimeOfTheSizePhase(t *testing.T) {
 }
 
 // failsFirst makes removeFile fail with "in use" for the first "fails" calls
-// and call os.Remove after that; it returns how many times it was called.
+// and call os.Remove after that; it returns how many times it was called. It
+// also checks the state of the lock at each call: at the first call
+// removeOrphanLock still holds it (the delete is made under the lock), at a
+// later call it has been released and closed, so that the lock can be taken
+// here (where a file that is open cannot be deleted, this is what lets the
+// second delete succeed). The lock taken here is released before the delete.
 func failsFirst(t *testing.T, fails int) *int {
 	t.Helper()
 	calls := 0
 	removeFile = func(path string) error {
 		calls++
+		lock, running, err := acquire(path)
+		switch {
+		case err != nil:
+			t.Errorf("call %d: taking the lock of the orphan: %v", calls, err)
+		case calls == 1 && !running:
+			t.Error("call 1: the lock was not held during the first delete")
+		case calls > 1 && (running || lock == nil):
+			t.Errorf("call %d: the lock was not released and closed before the next delete (held by another: %v)", calls, running)
+		}
+		release(lock)
 		if calls <= fails {
 			return errors.New("in use")
 		}
